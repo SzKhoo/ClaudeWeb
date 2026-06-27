@@ -33,8 +33,8 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 | 1 | `shared/` protocol + canonical + sign/verify+replay + IAgentEngine + tests | **DONE** (28/28 tests green) |
 | 0B | Engine specifics (auth, canUseTool, Stop hook, interrupt, resume/compaction) | TODO |
 | 0A | [GATE] Runtime spike over external transport | TODO (needs authed Claude machine) |
-| 2 | `relay/` deviceId-routed WS hub | IN PROGRESS |
-| 3 | `daemon/` sessions/storage/engine/policy | TODO |
+| 2 | `relay/` deviceId-routed WS hub | **DONE** (10/10 tests; entrypoint runs) |
+| 3 | `daemon/` sessions/storage/engine/policy | IN PROGRESS |
 | 4 | `web/` UI | TODO |
 | 5 | End-to-end manual verification | TODO |
 
@@ -51,6 +51,8 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 - Build all: `npm run build`.
 
 ## Changelog (newest first)
+- 2026-06-28 — **Task 2 done**: `relay/` complete, 10/10 tests, entrypoint runs via tsx. Opaque
+  byte-identical forwarding proven. Added ws/esbuild/tsx deps. See [task-02 note](notes/task-02-relay.md).
 - 2026-06-28 — **Task 1 done**: `shared/` complete, 28/28 tests green, typecheck clean, dist build works.
   All 6 plan-review corrections applied. Crypto = @noble/ed25519 async (no @noble/hashes). See
   [task-01 note](notes/task-01-shared.md). Starting Task 2 (`relay/`).

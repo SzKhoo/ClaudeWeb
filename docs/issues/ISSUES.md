@@ -21,6 +21,13 @@ Format: `#id [state] title` — newest first. States: OPEN / RESOLVED / WONTFIX 
   - web → Vite `resolve.alias`.
   **Never reintroduce a `workspaces` field or pnpm.** All deps live in the ROOT `package.json`.
 
+## Tooling
+- **#9 [DEFERRED] npm audit: 5 findings, all in the vitest→vite→esbuild DEV chain** (esbuild dev-server
+  advisory GHSA-67mh-4wv8-2f99, ≤0.24.2). Dev-only, dev-server-only — NOT in shipped runtime. Our direct
+  `esbuild` 0.28.1 (used for bundling) is unaffected. Clean fix = bump to `vitest@4` (breaking). Defer to
+  Phase 2 hardening; our tests use only stable describe/it/expect + defineConfig alias, so the v4 bump
+  should be low-risk when we take it.
+
 ## Design watches (from plan review)
 - **#3 [WATCH] Clock-window replay defense assumes loosely-synced clocks (NTP).** If real skew appears,
   add a handshake clock-offset exchange. MAX_CLOCK_SKEW_MS = 60000.

@@ -14,10 +14,10 @@ No accounts (locally-provisioned signing keypair; env pairing).
 - [x] `engine/IAgentEngine.ts`: connect/send/approveTool/denyTool/interrupt/resumeConversation/onEvent/dispose.
 - [x] tests: canonical-byte stability + valid/forged/unsigned/stale/replayed vectors. **28/28 green.**
 
-### S2 — relay/ untrusted pipe  ← (Task 2)
-- [ ] `ws` server; deviceId routing table; daemon register + browser attach; heartbeat; opaque forward.
-- [ ] Token-gated connect (Phase 0 = shared env token). Zero session-content state.
-- [ ] tests: route browser↔daemon by deviceId; reject unknown deviceId; cannot read/modify payload.
+### S2 — relay/ untrusted pipe  ← (Task 2) ✅ DONE
+- [x] `ws` server; deviceId routing table; daemon register + browser attach; heartbeat; opaque forward.
+- [x] Token-gated connect (Phase 0 = shared env token). Zero session-content state.
+- [x] tests: route browser↔daemon by deviceId; reject bad token; broadcast; presence; cannot read/modify payload (byte-identical). 10/10.
 
 ### S3 — daemon/ security boundary + sessions  ← (Task 3)
 - [ ] Outbound WS to relay; register deviceId; reconnect/backoff.
