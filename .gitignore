@@ -1,0 +1,23 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+*.log
+npm-debug.log*
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# local daemon runtime state
+.wcc/
+journal/
+
+# editor / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.vite/

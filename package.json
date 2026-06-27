@@ -1,0 +1,24 @@
+{
+  "name": "webclaudecode",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloud/web-delivered Claude Code — drive the real Claude Code on your own machine from a browser.",
+  "comment": "exFAT drive: NO npm/pnpm workspaces (symlinks unsupported). All deps live HERE in the root node_modules; cross-package imports resolve via aliases (tsconfig paths / vitest / esbuild / vite). See docs/issues/ISSUES.md #8.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
