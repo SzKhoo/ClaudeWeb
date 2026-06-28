@@ -42,5 +42,25 @@ Format: `#id [state] title` — newest first. States: OPEN / RESOLVED / WONTFIX 
 - **#5 [WATCH] In-flight-turn resume across daemon restart is NOT recoverable** — conversation-resume
   only. Daemon restart mid-turn must emit turn_complete{error} so the UI unlocks. Set expectations in UI.
 
+## Phase 1 decisions
+- **#11 [DECISION] Pairing = code-authenticated enrollment (PAKE-lite), NOT raw ECDH.** Plan said ECDH;
+  on review, the relay threat for enrollment is forgery/key-swap, not eavesdropping (the keys are
+  *public*). DH would buy confidentiality we don't need and still need an out-of-band authenticator.
+  So Phase 1 uses a one-shot, TTL-bounded pairing code (shown on the trusted daemon machine) → HKDF →
+  HMAC over the browser's signing pubkey. Relay lacking the code cannot forge or swap the enrolled
+  key. Daemon confirms with an Ed25519 signature using a device key whose pubkey the browser learned
+  from the **trusted server directory** (Supabase, not the relay). Phase 2 upgrades to SPAKE2 + WebAuthn
+  passkeys without changing the protocol shape. **No new crypto dependency** (WebCrypto HMAC/HKDF +
+  existing @noble/ed25519) — keeps installs minimal given C: is full (#1).
+- **#12 [GATE] Real Supabase project = Phase-1 0A/0B-equivalent.** All Phase-1 logic ships behind
+  seams (AuthVerifier, Directory, AuthClient) with in-memory impls for tests. Provisioning the real
+  Supabase project + flipping the seam impls is the single manual gate; documented in M1 doc S1.6.
+
+## Phase 1 watches
+- **#13 [WATCH] e2e multi-client-resume flake under full-suite load.** The test passes 5/5 in
+  isolation but occasionally times out at the 10s boundary when the whole 15-file suite runs in
+  parallel (~13s wall). Real-WebSocket + poll-based; CPU contention. Acceptable for now; consider
+  upping the timeout or running e2e in a separate `vitest run` shard if it becomes annoying.
+
 ## Resolved
 - (none yet)

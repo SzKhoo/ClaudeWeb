@@ -37,6 +37,8 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 | 3 | `daemon/` sessions/storage/engine/policy | **DONE** (19/19 tests; e2e over real sockets) |
 | 4 | `web/` UI | **DONE** (6/6 model tests; live preview verified) |
 | 5 | End-to-end verification | **DONE** (5/5 automated full-stack + live browser) |
+| 6 | **Phase 1** — multi-tenant shell: pairing protocol, relay authz, daemon enrollment, web auth+CSP, Supabase migrations | **DONE** (119/120 tests; e2e flake ISSUES #13) |
+| 6S | [GATE] Real Supabase project applied (S1.6) | TODO (manual; tracked in supabase/README.md) |
 
 ## How to resume
 1. Read this file's Status board.
@@ -51,6 +53,16 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 - Build all: `npm run build`.
 
 ## Changelog (newest first)
+- 2026-06-28 — **Phase 1 (M1) multi-tenant shell complete behind seams** (S1.1–S1.5 done; S1.6 = real
+  Supabase project = the manual gate). Adds: code-authenticated **pairing protocol** (HKDF→HMAC) in
+  `shared/` + HS256 JWT verifier; **relay AuthVerifier** with per-user device isolation (JwtAuthVerifier +
+  InMemoryDirectory + InMemoryDaemonTokenStore); **daemon EnrollmentManager** + persistent EnrolledKeyStore
+  + DeviceIdentity (replaces static env pubkey, revocable); **web Phase 1 shell** (MockAuthClient, login
+  screen, pairing UI, CSP meta, `?phase=1` opt-in route); **Supabase migrations** for devices/workspaces/
+  sessions/pairing_codes/browser_keys with RLS. ISSUES #11 (D1 decision: PAKE-lite, not raw ECDH), #12 (gate),
+  #13 (e2e flake). **120 tests total** (52 shared / 19 relay / 28 daemon / 16 web / 5 e2e), typecheck clean.
+  Live preview verified: ?phase=1 → login → pair → screens render with no CSP / console errors. See
+  [task-06 note](notes/task-06-phase-1.md) + [M1 milestone](milestones/M1-multi-tenant-shell.md).
 - 2026-06-28 — **Tasks 4 + 5 done → Phase 0 core slice COMPLETE (MockEngine path)**. `web/` React+Vite
   client (identity, signed Connection, SessionModel, full UI) — 6/6 model tests. `packages/e2e` full-stack
   test — 5/5 (happy/deny/interrupt/multi-client-resume/dirty-exit) wiring the REAL web Connection ⇄ relay ⇄

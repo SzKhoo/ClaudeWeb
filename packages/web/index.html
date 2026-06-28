@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Phase 1 CSP (Story S1.5). 'unsafe-inline' is allowed for styles only — needed for Vite's HMR
+      style injection in dev; production builds can drop it once we extract all CSS. No 'unsafe-eval',
+      no inline scripts: an XSS that lands in the DOM still cannot call subtle.sign() with our key.
+      Phase 2 hardens further (WebAuthn passkeys, biometric gate on high-privilege approvals).
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws: wss: https://*.supabase.co wss://*.supabase.co; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'"
+    />
     <title>ClaudeBridge — drive Claude Code from the web</title>
   </head>
   <body>

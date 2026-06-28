@@ -9,3 +9,7 @@ export * from "./protocol/messages.js";
 export * from "./protocol/canonical.js";
 export * from "./protocol/sign.js";
 export * from "./engine/IAgentEngine.js";
+export * from "./pairing/code.js";
+export * from "./pairing/hkdf.js";
+export * from "./pairing/pairing.js";
+export * from "./pairing/jwt.js";

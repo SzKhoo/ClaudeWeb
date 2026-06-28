@@ -8,10 +8,20 @@ import { StatusBar } from "./ui/StatusBar.js";
 import { Transcript } from "./ui/Transcript.js";
 import { PermissionPrompt } from "./ui/PermissionPrompt.js";
 import { Composer } from "./ui/Composer.js";
+import { Phase1Shell } from "./Phase1Shell.js";
 
 const EMPTY_VIEW: SessionView = { items: [], state: "idle" };
 
 export function App() {
+  // Phase 1 multi-tenant shell: opt-in via ?phase=1 (URL query). Default = Phase 0 single-tenant path
+  // so the existing live demo / e2e tests keep working without surgery.
+  const isPhase1 =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).has("phase");
+  if (isPhase1) return <Phase1Shell />;
+  return <Phase0App />;
+}
+
+function Phase0App() {
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [view, setView] = useState<SessionView>(EMPTY_VIEW);

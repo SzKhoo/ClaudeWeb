@@ -25,14 +25,23 @@ import {
   type RelayRegistered,
   type RelayRole,
 } from "./messages.js";
+import type { AuthVerifier } from "./auth.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type Logger = (level: LogLevel, message: string, meta?: Record<string, unknown>) => void;
 
 export interface RelayServerOptions {
   port: number;
-  /** Shared bearer token peers must present (Phase 0). */
-  token: string;
+  /**
+   * Shared bearer token (Phase 0 / local dev). Used ONLY when `auth` is not provided.
+   * In Phase 1 production paths the relay rejects everything that doesn't pass `auth`.
+   */
+  token?: string;
+  /**
+   * Phase 1 pluggable verifier: per-register {browser JWT, daemon device-token} → userId. When
+   * provided, the legacy shared-token check is disabled and cross-user routing is rejected.
+   */
+  auth?: AuthVerifier;
   host?: string;
   /** Ping interval; a socket that misses a pong between pings is terminated. Default 30s. */
   heartbeatMs?: number;
@@ -48,6 +57,8 @@ interface Conn {
   role?: RelayRole;
   deviceId?: string;
   clientInstanceId?: string;
+  /** Populated when an AuthVerifier accepted the register; used for ops/logs. */
+  userId?: string;
   registered: boolean;
   isAlive: boolean;
   registerTimer?: NodeJS.Timeout;
@@ -65,18 +76,30 @@ const DEFAULTS = {
 };
 
 export class RelayServer {
-  private readonly opts: Required<Omit<RelayServerOptions, "logger" | "host">> &
-    Pick<RelayServerOptions, "host"> & { logger: Logger };
+  private readonly opts: {
+    port: number;
+    token?: string;
+    auth?: AuthVerifier;
+    host?: string;
+    heartbeatMs: number;
+    registerTimeoutMs: number;
+    maxPayloadBytes: number;
+    logger: Logger;
+  };
   private wss?: WebSocketServer;
   private heartbeat?: NodeJS.Timeout;
   private readonly devices = new Map<string, DeviceBucket>();
   private readonly conns = new Set<Conn>();
 
   constructor(options: RelayServerOptions) {
+    if (!options.auth && !options.token) {
+      throw new Error("RelayServer: provide either { auth } or { token }");
+    }
     this.opts = {
       port: options.port,
-      token: options.token,
-      host: options.host,
+      ...(options.token !== undefined ? { token: options.token } : {}),
+      ...(options.auth !== undefined ? { auth: options.auth } : {}),
+      ...(options.host !== undefined ? { host: options.host } : {}),
       heartbeatMs: options.heartbeatMs ?? DEFAULTS.heartbeatMs,
       registerTimeoutMs: options.registerTimeoutMs ?? DEFAULTS.registerTimeoutMs,
       maxPayloadBytes: options.maxPayloadBytes ?? DEFAULTS.maxPayloadBytes,
@@ -164,7 +187,7 @@ export class RelayServer {
 
   private onMessage(conn: Conn, data: RawData, isBinary: boolean): void {
     if (!conn.registered) {
-      this.handleRegister(conn, data, isBinary);
+      void this.handleRegister(conn, data, isBinary);
       return;
     }
     // Registered: forward opaquely. The relay does not parse application frames.
@@ -175,7 +198,7 @@ export class RelayServer {
     }
   }
 
-  private handleRegister(conn: Conn, data: RawData, isBinary: boolean): void {
+  private async handleRegister(conn: Conn, data: RawData, isBinary: boolean): Promise<void> {
     if (isBinary) {
       this.sendError(conn.ws, "bad_register", "first frame must be a JSON relay_register");
       conn.ws.close();
@@ -194,7 +217,30 @@ export class RelayServer {
       conn.ws.close();
       return;
     }
-    if (!this.tokenOk(parsed.token)) {
+    // Phase 1: pluggable AuthVerifier (per-user device isolation) takes precedence over Phase-0
+    // shared-token check when provided.
+    let userId: string | undefined;
+    if (this.opts.auth) {
+      let result;
+      try {
+        result = await this.opts.auth.authorize(parsed);
+      } catch (err) {
+        this.opts.logger("error", "auth verifier threw", { err: String(err) });
+        this.sendError(conn.ws, "internal", "auth verifier error");
+        conn.ws.close();
+        return;
+      }
+      if (!result.ok) {
+        this.sendError(
+          conn.ws,
+          result.reason,
+          result.reason === "forbidden" ? "not authorized for this device" : "invalid token",
+        );
+        conn.ws.close();
+        return;
+      }
+      userId = result.userId;
+    } else if (!this.tokenOk(parsed.token)) {
       this.sendError(conn.ws, "bad_token", "invalid token");
       conn.ws.close();
       return;
@@ -204,6 +250,7 @@ export class RelayServer {
     conn.role = parsed.role;
     conn.deviceId = parsed.deviceId;
     conn.clientInstanceId = parsed.clientInstanceId;
+    if (userId !== undefined) conn.userId = userId;
     if (conn.registerTimer) clearTimeout(conn.registerTimer);
 
     const bucket = this.bucketFor(parsed.deviceId);
@@ -240,6 +287,7 @@ export class RelayServer {
       role: parsed.role,
       deviceId: parsed.deviceId,
       clientInstanceId: parsed.clientInstanceId,
+      userId,
     });
   }
 
@@ -301,8 +349,10 @@ export class RelayServer {
   }
 
   private tokenOk(provided: string): boolean {
+    const expected = this.opts.token;
+    if (!expected) return false;
     const a = Buffer.from(provided);
-    const b = Buffer.from(this.opts.token);
+    const b = Buffer.from(expected);
     if (a.length !== b.length) return false;
     return timingSafeEqual(a, b);
   }

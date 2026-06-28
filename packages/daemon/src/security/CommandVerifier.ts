@@ -16,7 +16,19 @@ import {
   type TransportEnvelope,
 } from "@wcc/shared";
 
-export class PairingStore {
+/**
+ * What the verifier needs from "the place that holds authorized browser pubkeys". Phase 0's concrete
+ * `PairingStore` class below (env-injected at startup) implements it; Phase 1's `EnrolledKeyStore`
+ * implements it too, so dynamic + revocable enrollment slots in without touching the verifier.
+ */
+export interface PairingKeyStore {
+  /** All currently-active (non-revoked) authorized browser public keys. */
+  keys(): readonly Uint8Array[];
+  /** Number of currently-active keys. */
+  readonly size: number;
+}
+
+export class PairingStore implements PairingKeyStore {
   private readonly pubkeys: Uint8Array[] = [];
 
   addPublicKey(pk: Uint8Array): void {
@@ -54,7 +66,7 @@ export interface CommandVerifierOptions {
 export class CommandVerifier {
   private readonly replay: ReplayGuard;
   constructor(
-    private readonly pairing: PairingStore,
+    private readonly pairing: PairingKeyStore,
     replay?: ReplayGuard,
     private readonly opts: CommandVerifierOptions = {},
   ) {

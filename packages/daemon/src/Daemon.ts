@@ -27,7 +27,16 @@ import {
   type ConnHello,
   type TransportEnvelope,
 } from "@wcc/shared";
-import { CommandVerifier, type PairingStore, type VerifyReason } from "./security/CommandVerifier.js";
+import {
+  CommandVerifier,
+  type PairingKeyStore,
+  type VerifyReason,
+} from "./security/CommandVerifier.js";
+import {
+  EnrollmentManager,
+  type EnrollmentManagerOptions,
+} from "./security/EnrollmentManager.js";
+import { isEnrollRequest } from "@wcc/shared";
 import { Session, type OutgoingEvent } from "./session/Session.js";
 import { SessionStorage } from "./storage/SessionStorage.js";
 import type { JournalSink } from "./storage/journal.js";
@@ -57,7 +66,9 @@ export interface DaemonOptions {
   workspaces: WorkspaceConfig[];
   engine: IAgentEngine;
   journal: JournalSink;
-  pairing: PairingStore;
+  pairing: PairingKeyStore;
+  /** Optional: enable Phase-1 dynamic browser-key enrollment via pre-session pairing frames. */
+  enrollment?: EnrollmentManagerOptions;
   /** Resume a prior engine conversation, if any. */
   resumeCheckpoint?: string;
   maxSkewMs?: number;
@@ -74,6 +85,7 @@ export class Daemon {
   private readonly workspaces: WorkspaceManager;
   private readonly verifier: CommandVerifier;
   private readonly session: Session;
+  private readonly enrollment?: EnrollmentManager;
   private readonly now: () => number;
   private readonly log: DaemonLogger;
 
@@ -113,6 +125,20 @@ export class Daemon {
     });
 
     this.resumeCheckpoint = opts.resumeCheckpoint;
+
+    if (opts.enrollment) {
+      this.enrollment = new EnrollmentManager({
+        ...opts.enrollment,
+        deviceId: this.deviceId,
+        ...(opts.now ? { now: opts.now } : {}),
+        logger: this.log,
+      });
+    }
+  }
+
+  /** The enrollment manager (when configured). Exposed so the CLI can mint pairing codes. */
+  enroll(): EnrollmentManager | undefined {
+    return this.enrollment;
   }
 
   private readonly resumeCheckpoint: string | undefined;
@@ -144,6 +170,17 @@ export class Daemon {
     // Bare protocol frame (handshake): has a `type` but no `payload`.
     if (isConnHello(parsed)) {
       this.handleHello(parsed);
+      return;
+    }
+
+    // Phase 1: pre-session pairing frame. Routed to the enrollment manager (if enabled).
+    if (isEnrollRequest(parsed)) {
+      if (!this.enrollment) {
+        this.log("warn", "enroll_request received but enrollment is disabled");
+        return;
+      }
+      const ack = await this.enrollment.handle(parsed);
+      this.sendRaw(ack);
       return;
     }
 

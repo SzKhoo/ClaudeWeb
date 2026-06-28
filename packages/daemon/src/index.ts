@@ -10,18 +10,27 @@
  *   WCC_SESSION_ID       session id              (default dev-session)
  *   WCC_WORKSPACE_ROOT   allowlisted root        (default cwd)
  *   WCC_WORKSPACE_NAME   display name            (default default)
- *   WCC_PAIRED_PUBKEY    base64url Ed25519 browser public key (REQUIRED to accept any command)
+ *   WCC_PAIRED_PUBKEY    base64url Ed25519 browser public key (Phase-0 static pairing; optional in P1)
  *   WCC_JOURNAL_PATH     journal jsonl path      (default <root>/.wcc/sessions/<sessionId>.jsonl)
  *   WCC_ENGINE           mock | claude           (default mock)
+ *   WCC_DEVICE_KEY_PATH  device identity file    (default <root>/.wcc/device.key.json)
+ *   WCC_KEYS_PATH        enrolled-keys file      (default <root>/.wcc/keys.json)
+ *   WCC_PRINT_PAIRING_CODE  if set, mints a pairing code on startup and prints it to stdout
  */
 
 import { join } from "node:path";
-import { fromBase64Url } from "@wcc/shared";
+import { fromBase64Url, toBase64Url } from "@wcc/shared";
 import { Daemon } from "./Daemon.js";
 import { DaemonClient } from "./transport/DaemonClient.js";
 import { MockEngine } from "./engine/MockEngine.js";
 import { FileJournal } from "./storage/journal.js";
 import { PairingStore } from "./security/CommandVerifier.js";
+import { EnrolledKeyStore } from "./security/EnrolledKeyStore.js";
+import { PairingCodeStore } from "./security/PairingCodeStore.js";
+import { openDeviceIdentity } from "./security/DeviceIdentity.js";
+import type { EnrollmentManagerOptions } from "./security/EnrollmentManager.js";
+import { formatCode } from "@wcc/shared";
+import type { PairingKeyStore } from "./security/CommandVerifier.js";
 import type { WorkspaceConfig } from "./workspace/workspace.js";
 
 const logger = (
@@ -44,14 +53,35 @@ async function main(): Promise<void> {
   const name = env["WCC_WORKSPACE_NAME"] ?? "default";
   const journalPath = env["WCC_JOURNAL_PATH"] ?? join(root, ".wcc", "sessions", `${sessionId}.jsonl`);
   const engineKind = env["WCC_ENGINE"] ?? "mock";
+  const deviceKeyPath = env["WCC_DEVICE_KEY_PATH"] ?? join(root, ".wcc", "device.key.json");
+  const enrolledKeysPath = env["WCC_KEYS_PATH"] ?? join(root, ".wcc", "keys.json");
 
-  const pairing = new PairingStore();
+  // Phase 1: dynamic enrolled-key store + EnrollmentManager. Phase 0's WCC_PAIRED_PUBKEY is honored
+  // by pre-seeding the static store, so existing deployments / tests keep working.
+  const enrolledKeys = await EnrolledKeyStore.open(enrolledKeysPath);
+  const staticPairing = new PairingStore();
   const pubkeyB64 = env["WCC_PAIRED_PUBKEY"];
   if (pubkeyB64) {
-    pairing.addPublicKey(fromBase64Url(pubkeyB64));
-  } else {
-    logger("warn", "WCC_PAIRED_PUBKEY not set — NO commands will be accepted until a key is paired.");
+    staticPairing.addPublicKey(fromBase64Url(pubkeyB64));
+    logger("info", "honoring static WCC_PAIRED_PUBKEY (Phase-0 compat path)");
   }
+
+  // Compose: verifier sees BOTH the enrolled keys AND the static key (if any).
+  const pairing: PairingKeyStore = {
+    keys: () => [...enrolledKeys.keys(), ...staticPairing.keys()],
+    get size() {
+      return enrolledKeys.size + staticPairing.size;
+    },
+  };
+  if (pairing.size === 0) {
+    logger(
+      "warn",
+      "no enrolled or static keys — daemon will reject ALL commands until a browser is paired.",
+    );
+  }
+
+  const deviceIdentity = await openDeviceIdentity(deviceKeyPath);
+  logger("info", "device identity ready", { devicePubKey: deviceIdentity.pubkeyB64 });
 
   if (engineKind !== "mock") {
     logger("error", `WCC_ENGINE=${engineKind} not available yet (real engine is the 0A/0B gate). Use mock.`);
@@ -62,6 +92,14 @@ async function main(): Promise<void> {
   const journal = await FileJournal.open(journalPath);
   const workspaces: WorkspaceConfig[] = [{ workspaceId: "default", name, root }];
 
+  const codes = new PairingCodeStore();
+  const enrollmentOpts: EnrollmentManagerOptions = {
+    enrolledKeys,
+    codes,
+    deviceSecretKey: deviceIdentity.secretKey,
+    devicePubKey: deviceIdentity.pubkey,
+  };
+
   const daemon = new Daemon({
     deviceId,
     sessionId,
@@ -69,8 +107,17 @@ async function main(): Promise<void> {
     engine,
     journal,
     pairing,
+    enrollment: enrollmentOpts,
     logger,
   });
+
+  if (env["WCC_PRINT_PAIRING_CODE"]) {
+    const code = daemon.enroll()!.mintCode("startup");
+    console.log(`[daemon] PAIRING CODE: ${formatCode(code)} (raw=${code})`);
+    console.log(`[daemon] DEVICE PUBKEY: ${deviceIdentity.pubkeyB64}`);
+  }
+  // Avoid an unused-var warning even when WCC_PRINT_PAIRING_CODE is unset.
+  void toBase64Url;
   await daemon.start();
 
   const client = new DaemonClient({ url: relayUrl, token, deviceId, daemon, logger });

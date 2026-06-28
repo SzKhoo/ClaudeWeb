@@ -43,6 +43,7 @@ export interface RelayError {
     | "register_timeout"
     | "device_offline"
     | "not_registered"
+    | "forbidden"
     | "internal";
   message: string;
 }
