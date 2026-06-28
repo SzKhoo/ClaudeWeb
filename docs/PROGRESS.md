@@ -34,8 +34,8 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 | 0B | Engine specifics (auth, canUseTool, Stop hook, interrupt, resume/compaction) | TODO |
 | 0A | [GATE] Runtime spike over external transport | TODO (needs authed Claude machine) |
 | 2 | `relay/` deviceId-routed WS hub | **DONE** (10/10 tests; entrypoint runs) |
-| 3 | `daemon/` sessions/storage/engine/policy | IN PROGRESS |
-| 4 | `web/` UI | TODO |
+| 3 | `daemon/` sessions/storage/engine/policy | **DONE** (19/19 tests; e2e over real sockets) |
+| 4 | `web/` UI | IN PROGRESS |
 | 5 | End-to-end manual verification | TODO |
 
 ## How to resume
@@ -46,11 +46,16 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 
 ## Commands
 - Install: `npm install` (from repo root; cache+temp already on E:).
-- Test all: `npm test`. Test one pkg: `npm test -w @wcc/shared`.
+- Test all: `npm test` (= `vitest run`). One pkg: `npm test -- packages/daemon` (NO `-w`; exFAT = no workspaces).
 - Typecheck: `npm run typecheck`.
 - Build all: `npm run build`.
 
 ## Changelog (newest first)
+- 2026-06-28 — **Task 3 done**: `daemon/` complete (Session, Daemon, DaemonClient, MockEngine,
+  SessionStorage, journal, Policy, CommandVerifier, Workspace[Manager]). **19/19 daemon tests**, 57/57
+  total, typecheck clean. Integration test proves the slice over real sockets: handshake → signed prompt
+  → approve-with-diff → file created + streamed; unsigned & replayed both rejected. Real `ClaudeAgentEngine`
+  remains the 0A/0B gate. See [task-03 note](notes/task-03-daemon.md). Starting Task 4 (`web/`).
 - 2026-06-28 — **Task 2 done**: `relay/` complete, 10/10 tests, entrypoint runs via tsx. Opaque
   byte-identical forwarding proven. Added ws/esbuild/tsx deps. See [task-02 note](notes/task-02-relay.md).
 - 2026-06-28 — **Task 1 done**: `shared/` complete, 28/28 tests green, typecheck clean, dist build works.

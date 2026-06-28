@@ -19,13 +19,13 @@ No accounts (locally-provisioned signing keypair; env pairing).
 - [x] Token-gated connect (Phase 0 = shared env token). Zero session-content state.
 - [x] tests: route browser↔daemon by deviceId; reject bad token; broadcast; presence; cannot read/modify payload (byte-identical). 10/10.
 
-### S3 — daemon/ security boundary + sessions  ← (Task 3)
-- [ ] Outbound WS to relay; register deviceId; reconnect/backoff.
-- [ ] WorkspaceManager → 1 Workspace → 1 Session; SessionStorage (journal + replay window + stream windows).
-- [ ] IAgentEngine impl (mock first, then real SDK once 0B/0A confirm); canUseTool → permission_request.
-- [ ] Verify signed user_message + permission_response; reject unsigned/forged/stale/replayed; default-deny.
-- [ ] Workspace allowlist; no auto-approve Bash; resume{sinceSeq,toolStreamOffsets} backfill; dirty-exit detect.
-- [ ] tests: signed round-trip; default-deny on unsigned; replay-with-stdout-backfill; multi-client cursors; dirty-exit→unlock.
+### S3 — daemon/ security boundary + sessions  ← (Task 3) ✅ DONE (19/19 tests)
+- [x] Outbound WS to relay (`DaemonClient`); register deviceId; capped-backoff reconnect.
+- [x] WorkspaceManager → 1 Workspace → 1 Session; SessionStorage (journal + replay window + stream windows).
+- [x] IAgentEngine impl (MockEngine now; real SDK is the 0A/0B gate); permission_request round-trip.
+- [x] Verify signed user_message + permission_response; reject unsigned/forged/stale/replayed; default-deny.
+- [x] Workspace allowlist; no auto-approve Bash; resume{sinceSeq,toolStreamOffsets} backfill; dirty-exit detect.
+- [x] tests: signed round-trip; default-deny on unsigned; resume backfill; forged-requestId ignore; dirty-exit→unlock; **+ live relay↔daemon↔browser integration** (handshake, file created+streamed, unsigned & replayed rejected).
 
 ### S4 — web/ UI  ← (Task 4)
 - [ ] React+Vite; locally-provisioned signing key (Ed25519 via WebCrypto); WSS to relay.
