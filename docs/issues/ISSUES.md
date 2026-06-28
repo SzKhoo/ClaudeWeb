@@ -5,6 +5,11 @@ Format: `#id [state] title` — newest first. States: OPEN / RESOLVED / WONTFIX 
 ## Environment
 - **#1 [WATCH] C: drive nearly full (~0.1 GB).** npm cache + TEMP redirected to E:. If any install fails
   with ENOSPC, check that `npm config get cache` is on E: and that `$env:TEMP` is set to E: for that shell.
+- **#10 [WATCH] Preview tooling is sandboxed to the harness working dir `D:\Qynix\LamResearch`.** It reads
+  THAT project's `.claude/launch.json` and rejects a `cwd` outside it — so the E: Vite dev server is launched
+  via a `web` config there that calls `node <E:>/node_modules/vite/bin/vite.js --config <E:>/packages/web/vite.config.ts`
+  (absolute paths; the vite config sets root + `@wcc/shared` alias via `import.meta.url`, so cwd is irrelevant).
+  The E: project also keeps its own `.claude/launch.json` for when run natively from E:.
 - **#2 [WATCH] Docker daemon may not be running.** Installed at C:\Program Files\Docker. Phase 0 avoids
   Docker (local Node processes). If/when relay containerization is needed, start Docker Desktop first.
 - **#6 [RESOLVED] git "dubious ownership" on E:.** E: filesystem does not record ownership. Fixed once with

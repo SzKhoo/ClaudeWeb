@@ -35,8 +35,8 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 | 0A | [GATE] Runtime spike over external transport | TODO (needs authed Claude machine) |
 | 2 | `relay/` deviceId-routed WS hub | **DONE** (10/10 tests; entrypoint runs) |
 | 3 | `daemon/` sessions/storage/engine/policy | **DONE** (19/19 tests; e2e over real sockets) |
-| 4 | `web/` UI | IN PROGRESS |
-| 5 | End-to-end manual verification | TODO |
+| 4 | `web/` UI | **DONE** (6/6 model tests; live preview verified) |
+| 5 | End-to-end verification | **DONE** (5/5 automated full-stack + live browser) |
 
 ## How to resume
 1. Read this file's Status board.
@@ -51,6 +51,13 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 - Build all: `npm run build`.
 
 ## Changelog (newest first)
+- 2026-06-28 — **Tasks 4 + 5 done → Phase 0 core slice COMPLETE (MockEngine path)**. `web/` React+Vite
+  client (identity, signed Connection, SessionModel, full UI) — 6/6 model tests. `packages/e2e` full-stack
+  test — 5/5 (happy/deny/interrupt/multi-client-resume/dirty-exit) wiring the REAL web Connection ⇄ relay ⇄
+  daemon. **68/68 total tests**, typecheck clean (root + web). LIVE browser verification passed: prompt →
+  diff-approval → `greeting.txt` written to disk + streamed → UI idle, no console errors. Added esbuild
+  `scripts/bundle.mjs` (dist/relay.mjs + dist/daemon.mjs). Only remaining Phase 0 item = the 0A/0B real
+  `ClaudeAgentEngine` gate (needs an authenticated Claude machine). See task-04 + task-05 notes.
 - 2026-06-28 — **Task 3 done**: `daemon/` complete (Session, Daemon, DaemonClient, MockEngine,
   SessionStorage, journal, Policy, CommandVerifier, Workspace[Manager]). **19/19 daemon tests**, 57/57
   total, typecheck clean. Integration test proves the slice over real sockets: handshake → signed prompt

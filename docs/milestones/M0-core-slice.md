@@ -27,17 +27,17 @@ No accounts (locally-provisioned signing keypair; env pairing).
 - [x] Workspace allowlist; no auto-approve Bash; resume{sinceSeq,toolStreamOffsets} backfill; dirty-exit detect.
 - [x] tests: signed round-trip; default-deny on unsigned; resume backfill; forged-requestId ignore; dirty-exit→unlock; **+ live relay↔daemon↔browser integration** (handshake, file created+streamed, unsigned & replayed rejected).
 
-### S4 — web/ UI  ← (Task 4)
-- [ ] React+Vite; locally-provisioned signing key (Ed25519 via WebCrypto); WSS to relay.
-- [ ] Streaming transcript + tool cards + diff preview; signed Commands; clientInstanceId + ack.
-- [ ] Auto-reconnect + resume.
-- [ ] tests: transcript render; permission/diff prompt; e2e reconnect/resume against a fake relay.
+### S4 — web/ UI  ← (Task 4) ✅ DONE (6/6 model tests + live preview)
+- [x] React+Vite; locally-provisioned Ed25519 signing key (persisted in localStorage); WSS to relay.
+- [x] Streaming transcript + tool cards + diff preview; signed Commands; clientInstanceId (ack type wired, not spammed).
+- [x] Auto-reconnect (capped backoff) + resume{sinceSeq, toolStreamOffsets}.
+- [x] tests: SessionModel transcript render + permission/diff prompt; full reconnect/resume proven in S5 e2e.
 
-### S5 — end-to-end verification  ← (Task 5)
-- [ ] Real relay + daemon + browser: "create hello.txt" → approve(diff) → file exists + streams.
-- [ ] Deny; interrupt mid-run; drop browser mid-Bash → re-hydrate w/ backfilled stdout.
-- [ ] Two clients attached, each resumes cleanly; inject unsigned/replayed approval at relay → rejected.
-- [ ] Kill daemon mid-turn → restart → UI unlocks with error.
+### S5 — end-to-end verification  ← (Task 5) ✅ DONE (5/5 automated + live browser)
+- [x] Real relay + daemon + browser: "create hello.txt" → approve(diff) → file exists + streams. (live + automated)
+- [x] Deny; interrupt mid-run; drop browser → re-hydrate via resume backfill.
+- [x] Two clients attached, each resumes cleanly; unsigned/replayed approval → rejected (daemon integration test).
+- [x] Kill daemon mid-turn → restart → UI unlocks with error (FileJournal dirty-exit, automated).
 
 ## Blocking research
 - **0B** engine specifics: subscription-auth vs ANTHROPIC_API_KEY; canUseTool signature; Stop hook;

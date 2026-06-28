@@ -3,5 +3,7 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["packages/*/src/**/*", "packages/*/test/**/*"]
+  "comment": "NodeNext packages only. packages/web uses Bundler/DOM resolution → its own tsconfig (typechecked separately). The e2e package is NodeNext and stays here.",
+  "include": ["packages/*/src/**/*", "packages/*/test/**/*"],
+  "exclude": ["node_modules", "packages/web"]
 }
