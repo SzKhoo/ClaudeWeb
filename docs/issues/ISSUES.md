@@ -36,13 +36,15 @@ Format: `#id [state] title` — newest first. States: OPEN / RESOLVED / WONTFIX 
 ## Design watches (from plan review)
 - **#3 [WATCH] Clock-window replay defense assumes loosely-synced clocks (NTP).** If real skew appears,
   add a handshake clock-offset exchange. MAX_CLOCK_SKEW_MS = 60000.
-- **#4 [OPEN → UNBLOCKED 2026-07-02] 0A/0B gate.** Real engine (auth mode, canUseTool, interrupt,
-  resume/compaction) still unverified — but the 2026-07-02 plan review (U1) corrected two things:
-  (a) **the current dev machine IS an authenticated Claude machine** — the spike is runnable here,
-  not blocked; (b) the licensed path for "user's own subscription on their own machine" is likely
-  spawning the installed `claude` CLI (`--input-format/--output-format stream-json`), NOT the Agent
-  SDK with subscription OAuth (third-party subscription-auth is ToS-constrained, see #14). This is
-  now milestone **M2 / Phase 2a — the NEXT work item** (docs/milestones/M2-real-engine.md).
+- **#4 [RESOLVED 2026-07-03] 0A/0B gate PASSED.** 2026-07-02 plan review (U1) unblocked it; the
+  spike ran on THIS machine on 2026-07-03 and every leg passed (canUseTool round-trip → file
+  written; multi-turn; interrupt; resume-with-context-preserved). The licensed path turned out to
+  be the **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk` `query()` in streaming-input mode),
+  which spawns the locally-installed `claude` CLI and inherits its login — no API key. Real engine
+  landed as `ClaudeAgentEngine` behind the existing `IAgentEngine`. See
+  [task-07 note](../notes/task-07-real-engine.md) and [M2 milestone](../milestones/M2-real-engine.md).
+  One finding worth flagging: after `interrupt()` the SDK still emits a `result` for the turn — the
+  engine remaps it to `turn_complete { status: "interrupted" }`.
 - **#5 [WATCH] In-flight-turn resume across daemon restart is NOT recoverable** — conversation-resume
   only. Daemon restart mid-turn must emit turn_complete{error} so the UI unlocks. Set expectations in UI.
 

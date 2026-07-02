@@ -31,14 +31,16 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 |------|------|-------|
 | 0 | Repo scaffold, docs trail, root config, git init | **DONE** |
 | 1 | `shared/` protocol + canonical + sign/verify+replay + IAgentEngine + tests | **DONE** (28/28 tests green) |
-| 0B | Engine specifics (auth, canUseTool, Stop hook, interrupt, resume/compaction) | **NEXT** — M2/S2.1; CLI-stream-json expected over SDK (ToS, ISSUES #14) |
-| 0A | [GATE] Runtime spike over external transport | **NEXT** — M2/S2.2; **runnable on THIS machine** (it IS an authed Claude machine) |
+| 0B | Engine specifics (auth, canUseTool, Stop hook, interrupt, resume/compaction) | **DONE** — Claude Agent SDK `query()` streaming-input, no API key (uses local login) |
+| 0A | [GATE] Runtime spike over external transport | **DONE / PASS** — 4 legs green on this machine (see notes/task-07) |
 | 2 | `relay/` deviceId-routed WS hub | **DONE** (10/10 tests; entrypoint runs) |
 | 3 | `daemon/` sessions/storage/engine/policy | **DONE** (19/19 tests; e2e over real sockets) |
 | 4 | `web/` UI | **DONE** (6/6 model tests; live preview verified) |
 | 5 | End-to-end verification | **DONE** (5/5 automated full-stack + live browser) |
 | 6 | **Phase 1** — multi-tenant shell: pairing protocol, relay authz, daemon enrollment, web auth+CSP, Supabase migrations | **DONE** (119/120 tests; e2e flake ISSUES #13) |
 | 6S | [GATE] Real Supabase project applied (S1.6) | TODO (manual; tracked in supabase/README.md) |
+| 7 | **M2 / Phase 2a** — real `ClaudeAgentEngine` + `WCC_ENGINE=claude` | **DONE** (9 new tests; 132/132 total; 0A gate PASS) |
+| 7D | Dogfood: owner drives a real task from the browser against this machine | TODO (queued; friction list feeds Phase 2b) |
 
 ## How to resume
 1. Read this file's Status board.
@@ -53,6 +55,16 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 - Build all: `npm run build`.
 
 ## Changelog (newest first)
+- 2026-07-03 — **M2 / Phase 2a done: real `ClaudeAgentEngine` behind `IAgentEngine`.** The 0A/0B
+  gate that had blocked two phases ran on THIS machine and passed on the first attempt (spike:
+  file write via canUseTool, multi-turn, interrupt, resume-with-context). 0B research found the
+  licensed path is the **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`) — spawns the local
+  `claude` CLI and inherits its login, **no API key**. Engine implemented with an injectable
+  `queryFn` (lazy import in prod; scripted fake in tests) that maps `stream_event`/`assistant`/
+  `user`/`result` messages to `IAgentEngine` events and bridges `canUseTool` to
+  `permission_request`; `resumeConversation` restarts `query({ resume })`. `WCC_ENGINE=claude`
+  wired in the daemon entrypoint. 9 new tests, **132/132** across 16 files, typecheck clean.
+  ISSUES #4 RESOLVED. See [M2](milestones/M2-real-engine.md) + [task-07 note](notes/task-07-real-engine.md).
 - 2026-07-02 — **Plan review: 5 unreasonable points fixed + honest market assessment recorded**
   ([MARKET.md](MARKET.md)). U1: 0A/0B gate un-blocked — this dev machine IS an authed Claude
   machine; real engine is now milestone [M2](milestones/M2-real-engine.md) (Phase 2a, NEXT). U2:

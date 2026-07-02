@@ -23,6 +23,8 @@ import { fromBase64Url, toBase64Url } from "@wcc/shared";
 import { Daemon } from "./Daemon.js";
 import { DaemonClient } from "./transport/DaemonClient.js";
 import { MockEngine } from "./engine/MockEngine.js";
+import { ClaudeAgentEngine } from "./engine/ClaudeAgentEngine.js";
+import type { IAgentEngine } from "@wcc/shared";
 import { FileJournal } from "./storage/journal.js";
 import { PairingStore } from "./security/CommandVerifier.js";
 import { EnrolledKeyStore } from "./security/EnrolledKeyStore.js";
@@ -83,12 +85,21 @@ async function main(): Promise<void> {
   const deviceIdentity = await openDeviceIdentity(deviceKeyPath);
   logger("info", "device identity ready", { devicePubKey: deviceIdentity.pubkeyB64 });
 
-  if (engineKind !== "mock") {
-    logger("error", `WCC_ENGINE=${engineKind} not available yet (real engine is the 0A/0B gate). Use mock.`);
+  let engine: IAgentEngine;
+  if (engineKind === "mock") {
+    engine = new MockEngine();
+  } else if (engineKind === "claude") {
+    // 0A/0B gate passed 2026-07-03: streaming-input + canUseTool + interrupt + resume proven on
+    // this machine's local Claude Code login (see docs/notes/task-07-real-engine.md). No API key.
+    engine = new ClaudeAgentEngine({
+      ...(env["WCC_MODEL"] ? { model: env["WCC_MODEL"] } : {}),
+      logger,
+    });
+    logger("info", "using ClaudeAgentEngine", { model: env["WCC_MODEL"] ?? "(CLI default)" });
+  } else {
+    logger("error", `WCC_ENGINE=${engineKind} unknown; use "mock" or "claude".`);
     process.exit(2);
   }
-
-  const engine = new MockEngine();
   const journal = await FileJournal.open(journalPath);
   const workspaces: WorkspaceConfig[] = [{ workspaceId: "default", name, root }];
 
