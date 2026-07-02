@@ -36,9 +36,13 @@ Format: `#id [state] title` — newest first. States: OPEN / RESOLVED / WONTFIX 
 ## Design watches (from plan review)
 - **#3 [WATCH] Clock-window replay defense assumes loosely-synced clocks (NTP).** If real skew appears,
   add a handshake clock-offset exchange. MAX_CLOCK_SKEW_MS = 60000.
-- **#4 [OPEN] 0A/0B gate.** Real Agent SDK engine (subscription auth, canUseTool, interrupt, resume/
-  compaction) is unverified until run on an authenticated Claude machine. S1–S2 + most of S3 proceed
-  behind a MockEngine; the real engine is slotted in at S3 and validated at 0A.
+- **#4 [OPEN → UNBLOCKED 2026-07-02] 0A/0B gate.** Real engine (auth mode, canUseTool, interrupt,
+  resume/compaction) still unverified — but the 2026-07-02 plan review (U1) corrected two things:
+  (a) **the current dev machine IS an authenticated Claude machine** — the spike is runnable here,
+  not blocked; (b) the licensed path for "user's own subscription on their own machine" is likely
+  spawning the installed `claude` CLI (`--input-format/--output-format stream-json`), NOT the Agent
+  SDK with subscription OAuth (third-party subscription-auth is ToS-constrained, see #14). This is
+  now milestone **M2 / Phase 2a — the NEXT work item** (docs/milestones/M2-real-engine.md).
 - **#5 [WATCH] In-flight-turn resume across daemon restart is NOT recoverable** — conversation-resume
   only. Daemon restart mid-turn must emit turn_complete{error} so the UI unlocks. Set expectations in UI.
 
@@ -52,15 +56,43 @@ Format: `#id [state] title` — newest first. States: OPEN / RESOLVED / WONTFIX 
   from the **trusted server directory** (Supabase, not the relay). Phase 2 upgrades to SPAKE2 + WebAuthn
   passkeys without changing the protocol shape. **No new crypto dependency** (WebCrypto HMAC/HKDF +
   existing @noble/ed25519) — keeps installs minimal given C: is full (#1).
+  *2026-07-02 amendments:* (a) the "ECDH unnecessary" half is superseded for Phase 2b — X25519 gets
+  ADDED to pairing to derive a channel key for payload encryption (see #15); the code-HMAC
+  authentication half stands. (b) `WCC_PRINT_PAIRING_CODE` prints the raw code to stdout — DEV-ONLY
+  convenience; the production pairing UX must mint codes via the pair CLI/UI, never into logs.
 - **#12 [GATE] Real Supabase project = Phase-1 0A/0B-equivalent.** All Phase-1 logic ships behind
   seams (AuthVerifier, Directory, AuthClient) with in-memory impls for tests. Provisioning the real
   Supabase project + flipping the seam impls is the single manual gate; documented in M1 doc S1.6.
 
 ## Phase 1 watches
-- **#13 [WATCH] e2e multi-client-resume flake under full-suite load.** The test passes 5/5 in
-  isolation but occasionally times out at the 10s boundary when the whole 15-file suite runs in
-  parallel (~13s wall). Real-WebSocket + poll-based; CPU contention. Acceptable for now; consider
-  upping the timeout or running e2e in a separate `vitest run` shard if it becomes annoying.
+- **#13 [RESOLVED 2026-07-02] e2e multi-client-resume flake.** TWO causes, found while fixing:
+  (a) the poll condition fired on the FIRST backfilled tool item — mid-replay, when the view state
+  is legitimately still "tool-running" until the final session_status snapshot lands → intermittent
+  `expected 'tool-running' to be 'idle'`; (b) under full-suite load the 600-attempt budget (~10s
+  effective) could elapse before backfill. Fixed: poll the TERMINAL condition (tool item AND state
+  idle) with a 3000-attempt (~15s) budget. Product behavior was correct throughout — the backfill
+  always converges to idle; the test asserted too early. Verified over repeated full-suite runs.
+  *Related environmental find:* rare "Worker exited unexpectedly" from vitest's fork pool — this
+  machine's pagefile is on the nearly-full C: (#7), and a CPU-count worker fleet can get one process
+  killed under memory pressure. Mitigated: `vitest.config.ts` caps the pool (`maxForks: 4`).
+  17/18 subsequent full-suite runs clean, incl. 10 consecutive; residual rarity is machine, not code.
+
+## Business / product risks (from 2026-07-02 plan review — see docs/MARKET.md)
+- **#14 [WATCH-BUSINESS] Anthropic ToS on commercial subscription piggybacking.** Personal use
+  (remote-controlling YOUR OWN machine's Claude Code) is fine. A *commercial hosted product* whose
+  value rides on customers' consumer Claude subscriptions is a gray zone Anthropic can close.
+  **Hard gate: verify the current third-party / subscription-auth policy BEFORE any Phase-2c
+  monetization work.** Also constrains the engine impl choice (#4).
+- **#15 [DECISION] Payload E2E encryption = pre-public-launch REQUIREMENT (was "Phase 2 stretch").**
+  The relay currently CAN read all session content (prompts, diffs, file text) even though it
+  forwards opaquely. Fine for a personal tool; unacceptable for multi-tenant strangers' code.
+  Design (locked): extend pairing with **X25519** — the code-HMAC still authenticates the exchange
+  (keeps #11's insight), the ECDH output becomes the session channel key ⇒ authenticated key
+  exchange, relay becomes truly blind. Lands in Phase 2b, BEFORE any public multi-tenant exposure.
+- **#16 [RESOLVED 2026-07-02] Relay silently fell back to the insecure dev token in production.**
+  `packages/relay/src/index.ts` used `dev-relay-token` with only a console warning when RELAY_TOKEN
+  was unset — a prod-deploy footgun. Fixed: when `NODE_ENV=production`, the relay now hard-exits
+  with a clear error unless `RELAY_JWT_SECRET` or an explicit `RELAY_TOKEN` is set. Dev unchanged.
 
 ## Resolved
-- (none yet)
+- #13 (e2e flake — poll budget), #16 (relay prod token guard). Details in-place above.

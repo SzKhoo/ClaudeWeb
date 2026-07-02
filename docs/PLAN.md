@@ -11,7 +11,13 @@ drives Claude Code on the user's *own* powered-on machine."
 **Decisions:** multi-tenant product; live interactive session (stream + tool-approval); north star =
 remote-control app, seams only (Claude-only, future-proof via `IAgentEngine`, layered protocol,
 `deviceId` routing, capability discovery); engine behind `IAgentEngine`; stack = Supabase + dedicated WS
-relay (hybrid); prove the core slice first; control-channel trust = "sign now, encrypt later".
+relay (hybrid); prove the core slice first; control-channel trust = "sign now, encrypt later"
+**(AMENDED 2026-07-02: "later" = before any public multi-tenant launch, not open-ended — see
+ISSUES #15 and the Phase 2b entry below)**.
+
+> **2026-07-02 plan review** (see [MARKET.md](./MARKET.md) for the honest market assessment):
+> five unreasonable points fixed — U1 gate reorder, U2 encryption reclassification, U3 Phase-2
+> re-cut, U4 Phase-3 cloud added with corrected trust model, U5 ToS risk recorded (ISSUES #14).
 
 **Non-goals (seams reserved, do NOT build now):** multi-engine AgentHost, plugin manager, extra
 transports (WebRTC/IPC/SSH), multi-region relays, Routines/scheduling.
@@ -46,10 +52,43 @@ shared/test/sign.test.ts       # valid + FORGED + UNSIGNED + STALE(>60s) + REPLA
 5. **Disambiguate two "resume"s** — engine `resumeConversation(checkpoint)` vs transport `resume{sinceSeq,toolStreamOffsets}`.
 6. **Clock-window assumes loosely-synced clocks (NTP)** — documented assumption.
 
-## Phases
-- **Phase 0 — core slice:** 0A runtime spike [GATE], 0B engine specifics [BLOCKING], 1 shared/, 2 relay/, 3 daemon/, 4 web/. No accounts; locally-provisioned keypair; env pairing.
-- **Phase 1 — multi-tenant shell:** Supabase Auth + Postgres registry; pairing = ECDH + WebAuthn passkey enrollment; relay authz; strict CSP; "My machines" picker.
-- **Phase 2 — hardening:** Stripe billing; history audit split; WebAuthn biometric gate on high-priv approvals; revoke/kill-switch; Redis backplane keyed by deviceId; multi-workspace/session; daemon packaging+auto-update; (stretch) full payload E2E encryption.
+## Phases (re-cut 2026-07-02 — U1/U2/U3/U4)
+- **Phase 0 — core slice: ✅ DONE (MockEngine path).** 1 shared/, 2 relay/, 3 daemon/, 4 web/, 5 e2e.
+  No accounts; locally-provisioned keypair; env pairing.
+- **Phase 1 — multi-tenant shell: ✅ DONE behind seams (S1.6 Supabase gate pending).** Supabase
+  Auth + Postgres registry (migrations written); pairing = code-authenticated enrollment (PAKE-lite,
+  ISSUES #11 — passkeys deferred to P2b); relay authz w/ per-user device isolation; strict CSP.
+- **Phase 2a — REAL ENGINE + dogfood (M2, NEXT — this was the inverted gate, U1):**
+  - **0B engine specifics:** subscription auth reality check — Anthropic constrains third-party use
+    of subscription/OAuth auth via the Agent SDK; on the user's OWN machine the licensed path is the
+    installed `claude` CLI itself (spawn with `--input-format stream-json --output-format
+    stream-json`), which uses whatever auth the user already set up. Lock `ClaudeAgentEngine` impl
+    choice (CLI stream-json vs Agent SDK) from this, not from assumption.
+  - **0A runtime spike [GATE]:** long-lived interactive session w/ streaming + canUseTool approval +
+    interrupt + multiple prompts + native resume/compaction over external transport. **Runnable on
+    the current dev machine — it IS an authenticated Claude machine.** No longer "blocked".
+  - `ClaudeAgentEngine` behind `IAgentEngine`; flip `WCC_ENGINE=claude`; owner dogfoods daily.
+- **Phase 2b — hardening (before ANY public multi-tenant exposure):**
+  - **Payload E2E encryption — REQUIRED, not stretch (U2, ISSUES #15).** Design: extend pairing with
+    X25519 — the code-HMAC still authenticates the exchange (D1's insight stands), the ECDH output
+    becomes the session channel key ⇒ authenticated key exchange; relay becomes a truly blind pipe.
+  - WebAuthn passkeys + biometric gate on high-priv approvals; revoke/kill-switch; history audit
+    split; daemon packaging + auto-update. CSP: pin `connect-src` to the real relay origin in prod
+    builds (dev meta stays permissive for HMR).
+- **Phase 2c — monetization (ONLY with evidence, U3/U5):** gate on (a) niche demand validated by
+  real usage, (b) Anthropic ToS check for commercial subscription piggybacking (ISSUES #14). Then
+  Stripe + plan gating. Redis backplane / multi-region stay deferred until load exists.
+- **Phase 3 — Cloud Workspaces (owner's end-goal: "no laptop, rent a VM") — U4:**
+  - **Feasible today:** the daemon is location-agnostic. A cloud workspace = the same daemon in a
+    per-user container/VM (Fly Machines / Hetzner to start) with Claude Code preinstalled; the user
+    signs into their own Claude account once inside it; a persistent volume keeps env + `claude`
+    auth + repos. Browser UX is IDENTICAL to own-machine mode (same relay, same protocol).
+  - **Trust model INVERTS — document honestly:** on a rented VM the user must trust the HOST; the
+    E2E-signing-vs-relay story is no longer the headline. The security story becomes: per-tenant VM
+    isolation, encryption at rest, no cross-tenant access, kill switch, and the same daemon-side
+    policy/audit plane. Never market cloud mode with the own-machine trust claims.
+  - **Differentiation requirement:** persistent full dev VM + own-machine-parity UX + policy plane.
+    A throwaway sandbox loses to claude.ai/code and Codex cloud (vendor-subsidized — see MARKET.md).
 
 ## Phase 0 Done =
 prompt → Claude proposes writing a file → approval (with diff) → Approve → file created → streams;

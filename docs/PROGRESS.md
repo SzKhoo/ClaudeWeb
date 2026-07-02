@@ -31,8 +31,8 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 |------|------|-------|
 | 0 | Repo scaffold, docs trail, root config, git init | **DONE** |
 | 1 | `shared/` protocol + canonical + sign/verify+replay + IAgentEngine + tests | **DONE** (28/28 tests green) |
-| 0B | Engine specifics (auth, canUseTool, Stop hook, interrupt, resume/compaction) | TODO |
-| 0A | [GATE] Runtime spike over external transport | TODO (needs authed Claude machine) |
+| 0B | Engine specifics (auth, canUseTool, Stop hook, interrupt, resume/compaction) | **NEXT** — M2/S2.1; CLI-stream-json expected over SDK (ToS, ISSUES #14) |
+| 0A | [GATE] Runtime spike over external transport | **NEXT** — M2/S2.2; **runnable on THIS machine** (it IS an authed Claude machine) |
 | 2 | `relay/` deviceId-routed WS hub | **DONE** (10/10 tests; entrypoint runs) |
 | 3 | `daemon/` sessions/storage/engine/policy | **DONE** (19/19 tests; e2e over real sockets) |
 | 4 | `web/` UI | **DONE** (6/6 model tests; live preview verified) |
@@ -53,6 +53,15 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 - Build all: `npm run build`.
 
 ## Changelog (newest first)
+- 2026-07-02 — **Plan review: 5 unreasonable points fixed + honest market assessment recorded**
+  ([MARKET.md](MARKET.md)). U1: 0A/0B gate un-blocked — this dev machine IS an authed Claude
+  machine; real engine is now milestone [M2](milestones/M2-real-engine.md) (Phase 2a, NEXT). U2:
+  payload E2E encryption promoted from "stretch" to pre-public-launch requirement, design = X25519
+  added to pairing (ISSUES #15). U3: Phase 2 re-cut into 2a engine/2b hardening/2c monetize-with-
+  evidence. U4: Phase 3 Cloud Workspaces added (owner's end-goal) with the inverted trust model
+  documented honestly. U5: Anthropic ToS risk on commercial subscription piggybacking recorded as a
+  hard pre-monetization gate (ISSUES #14). Code fixes: relay production token guard (ISSUES #16),
+  JWT aud/iss verification (opt-in), e2e flake #13 poll budget. See PLAN.md "Phases (re-cut)".
 - 2026-06-28 — **Phase 1 (M1) multi-tenant shell complete behind seams** (S1.1–S1.5 done; S1.6 = real
   Supabase project = the manual gate). Adds: code-authenticated **pairing protocol** (HKDF→HMAC) in
   `shared/` + HS256 JWT verifier; **relay AuthVerifier** with per-user device isolation (JwtAuthVerifier +

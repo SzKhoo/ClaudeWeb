@@ -54,7 +54,13 @@ export async function signJwtHs256(claims: JwtClaims, secret: Uint8Array): Promi
   return `${signingInput}.${toBase64Url(new Uint8Array(sig))}`;
 }
 
-export type JwtVerifyFailReason = "malformed" | "bad_signature" | "expired" | "not_yet_valid";
+export type JwtVerifyFailReason =
+  | "malformed"
+  | "bad_signature"
+  | "expired"
+  | "not_yet_valid"
+  | "bad_aud"
+  | "bad_iss";
 export type JwtVerifyResult =
   | { ok: true; claims: JwtClaims }
   | { ok: false; reason: JwtVerifyFailReason };
@@ -64,6 +70,13 @@ export interface JwtVerifyOptions {
   now?: number;
   /** Tolerance for nbf/exp (default 30s). */
   clockSkewMs?: number;
+  /**
+   * When set, the token's `aud` must equal it (or, for array `aud`, contain it). Supabase access
+   * tokens carry `aud: "authenticated"`. Opt-in so pre-existing dev tokens keep verifying.
+   */
+  expectedAud?: string;
+  /** When set, the token's `iss` must equal it (Supabase: `https://<ref>.supabase.co/auth/v1`). */
+  expectedIss?: string;
 }
 
 export async function verifyJwtHs256(
@@ -107,5 +120,17 @@ export async function verifyJwtHs256(
   if (typeof claims.nbf === "number" && nowS + skewS < claims.nbf) {
     return { ok: false, reason: "not_yet_valid" };
   }
+
+  if (opts.expectedAud !== undefined) {
+    const aud = claims.aud as unknown;
+    const matches = Array.isArray(aud)
+      ? aud.includes(opts.expectedAud)
+      : aud === opts.expectedAud;
+    if (!matches) return { ok: false, reason: "bad_aud" };
+  }
+  if (opts.expectedIss !== undefined && claims.iss !== opts.expectedIss) {
+    return { ok: false, reason: "bad_iss" };
+  }
+
   return { ok: true, claims };
 }

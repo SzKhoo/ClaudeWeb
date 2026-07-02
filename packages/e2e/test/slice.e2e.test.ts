@@ -192,9 +192,16 @@ describe("Phase 0 slice — full stack (web Connection ⇄ relay ⇄ daemon ⇄ 
     await poll(() => (fileExists(root, "shared.txt") ? true : undefined));
 
     // Second browser connects fresh (cursor 0) → resume backfills the full history.
+    // ISSUES #13: poll for the TERMINAL condition (tool item present AND state idle), not just the
+    // first tool item — the backfill replays events incrementally, so a poll that fires mid-replay
+    // legitimately sees state "tool-running" for a few frames until the final session_status
+    // snapshot lands. 3000 attempts ≈ 15s nominal budget also covers full-suite CPU contention.
     const b = new Browser(stack.url, stack.keys, "browser-B");
     b.start();
-    await poll(() => (b.view().items.some((i) => i.kind === "tool") ? true : undefined));
+    await poll(() => {
+      const v = b.view();
+      return v.items.some((i) => i.kind === "tool") && v.state === "idle" ? true : undefined;
+    }, 3000);
     expect(b.view().items.some((i) => i.kind === "tool")).toBe(true);
     expect(b.view().state).toBe("idle");
     expect(b.conn.cursor).toBeGreaterThan(0);

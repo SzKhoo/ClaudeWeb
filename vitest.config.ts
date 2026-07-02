@@ -14,5 +14,16 @@ export default defineConfig({
   test: {
     include: ["packages/*/test/**/*.test.ts"],
     environment: "node",
+    // This dev machine's pagefile lives on the nearly-full C: (ISSUES #7), so spawning a full
+    // CPU-count fleet of fork workers occasionally gets one OOM-killed ("Worker exited
+    // unexpectedly", ISSUES #13 investigation). Cap the pool: plenty of parallelism for 15 files,
+    // small enough to stay under the machine's commit limit.
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        maxForks: 4,
+        minForks: 1,
+      },
+    },
   },
 });

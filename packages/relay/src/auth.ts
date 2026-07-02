@@ -48,6 +48,10 @@ export interface JwtAuthVerifierOptions {
   daemonTokens: DaemonTokenStore;
   now?: () => number;
   clockSkewMs?: number;
+  /** Require this `aud` on browser JWTs (Supabase issues `authenticated`). Opt-in — set in prod. */
+  expectedAud?: string;
+  /** Require this `iss` on browser JWTs (`https://<ref>.supabase.co/auth/v1`). Opt-in — set in prod. */
+  expectedIss?: string;
 }
 
 /** AuthVerifier that handles BOTH browser (JWT) and daemon (device-token) registers. */
@@ -59,6 +63,8 @@ export class JwtAuthVerifier implements AuthVerifier {
       const r = await verifyJwtHs256(register.token, this.opts.jwtSecret, {
         ...(this.opts.now ? { now: this.opts.now() } : {}),
         ...(this.opts.clockSkewMs !== undefined ? { clockSkewMs: this.opts.clockSkewMs } : {}),
+        ...(this.opts.expectedAud !== undefined ? { expectedAud: this.opts.expectedAud } : {}),
+        ...(this.opts.expectedIss !== undefined ? { expectedIss: this.opts.expectedIss } : {}),
       });
       if (!r.ok) return { ok: false, reason: "bad_token" };
       const userId = typeof r.claims.sub === "string" ? r.claims.sub : "";

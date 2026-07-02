@@ -190,4 +190,39 @@ describe("RelayServer + JwtAuthVerifier (S1.3)", () => {
         }),
     ).toThrow(/auth.*token/);
   });
+
+  it("expectedAud: verifier rejects a JWT without the required audience → bad_token", async () => {
+    await server.stop();
+    const auth = new JwtAuthVerifier({
+      jwtSecret: JWT_SECRET,
+      directory,
+      daemonTokens,
+      expectedAud: "authenticated",
+    });
+    server = new RelayServer({
+      port: 0,
+      auth,
+      logger: () => {},
+      heartbeatMs: 60_000,
+      registerTimeoutMs: 2_000,
+    });
+    const { port } = await server.start();
+    url = `ws://127.0.0.1:${port}`;
+
+    // Token WITHOUT aud (like our older dev tokens) → rejected when aud is required.
+    const noAud = await mintBrowserJwt("alice");
+    const c1 = await client();
+    c1.send({ type: "relay_register", token: noAud, role: "browser", deviceId: "dev-A" });
+    expect(await c1.next()).toMatchObject({ type: "relay_error", code: "bad_token" });
+
+    // Token WITH the right aud → accepted.
+    const nowS = Math.floor(Date.now() / 1000);
+    const withAud = await signJwtHs256(
+      { sub: "alice", iat: nowS, exp: nowS + 300, aud: "authenticated" },
+      JWT_SECRET,
+    );
+    const c2 = await client();
+    c2.send({ type: "relay_register", token: withAud, role: "browser", deviceId: "dev-A" });
+    expect(await c2.next()).toMatchObject({ type: "relay_registered", ok: true });
+  });
 });

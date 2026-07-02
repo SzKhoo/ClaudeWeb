@@ -69,4 +69,42 @@ describe("HS256 JWT", () => {
     const r = await verifyJwtHs256(token, secret, { now: nowMs });
     expect(r.ok).toBe(true);
   });
+
+  it("enforces expectedAud when set (string + array forms), skips when unset", async () => {
+    const good = await signJwtHs256(
+      { sub: "u", exp: nowS + 60, aud: "authenticated" },
+      secret,
+    );
+    expect((await verifyJwtHs256(good, secret, { now: nowMs, expectedAud: "authenticated" })).ok).toBe(true);
+    // Array aud containing the expected value also passes.
+    const arr = await signJwtHs256(
+      { sub: "u", exp: nowS + 60, aud: ["other", "authenticated"] as unknown as string },
+      secret,
+    );
+    expect((await verifyJwtHs256(arr, secret, { now: nowMs, expectedAud: "authenticated" })).ok).toBe(true);
+    // Wrong / missing aud → bad_aud.
+    const wrong = await signJwtHs256({ sub: "u", exp: nowS + 60, aud: "anon" }, secret);
+    expect(await verifyJwtHs256(wrong, secret, { now: nowMs, expectedAud: "authenticated" })).toEqual({
+      ok: false,
+      reason: "bad_aud",
+    });
+    const missing = await signJwtHs256({ sub: "u", exp: nowS + 60 }, secret);
+    expect(await verifyJwtHs256(missing, secret, { now: nowMs, expectedAud: "authenticated" })).toEqual({
+      ok: false,
+      reason: "bad_aud",
+    });
+    // Unset → not enforced (back-compat for dev tokens).
+    expect((await verifyJwtHs256(missing, secret, { now: nowMs })).ok).toBe(true);
+  });
+
+  it("enforces expectedIss when set", async () => {
+    const iss = "https://ref.supabase.co/auth/v1";
+    const good = await signJwtHs256({ sub: "u", exp: nowS + 60, iss }, secret);
+    expect((await verifyJwtHs256(good, secret, { now: nowMs, expectedIss: iss })).ok).toBe(true);
+    const wrong = await signJwtHs256({ sub: "u", exp: nowS + 60, iss: "https://evil.example" }, secret);
+    expect(await verifyJwtHs256(wrong, secret, { now: nowMs, expectedIss: iss })).toEqual({
+      ok: false,
+      reason: "bad_iss",
+    });
+  });
 });

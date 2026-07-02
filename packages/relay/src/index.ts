@@ -55,6 +55,13 @@ async function main(): Promise<void> {
   const auth = await buildAuthFromEnv();
   let token = process.env["RELAY_TOKEN"] ?? "";
   if (!auth && !token) {
+    // ISSUES #16: never fall back to the insecure dev token in production — hard-fail instead.
+    if (process.env["NODE_ENV"] === "production") {
+      console.error(
+        "[relay] FATAL: no credentials configured. Set RELAY_JWT_SECRET (Phase 1 auth) or an explicit RELAY_TOKEN. Refusing to start in production with the dev token.",
+      );
+      process.exit(1);
+    }
     token = DEV_TOKEN;
     console.warn(
       "[relay] WARNING: RELAY_TOKEN not set — using insecure dev token. Set RELAY_TOKEN or RELAY_JWT_SECRET in production.",
