@@ -85,12 +85,20 @@ Format: `#id [state] title` — newest first. States: OPEN / RESOLVED / WONTFIX 
   value rides on customers' consumer Claude subscriptions is a gray zone Anthropic can close.
   **Hard gate: verify the current third-party / subscription-auth policy BEFORE any Phase-2c
   monetization work.** Also constrains the engine impl choice (#4).
-- **#15 [DECISION] Payload E2E encryption = pre-public-launch REQUIREMENT (was "Phase 2 stretch").**
+- **#15 [IN-PROGRESS] Payload E2E encryption = pre-public-launch REQUIREMENT (was "Phase 2 stretch").**
   The relay currently CAN read all session content (prompts, diffs, file text) even though it
   forwards opaquely. Fine for a personal tool; unacceptable for multi-tenant strangers' code.
   Design (locked): extend pairing with **X25519** — the code-HMAC still authenticates the exchange
   (keeps #11's insight), the ECDH output becomes the session channel key ⇒ authenticated key
   exchange, relay becomes truly blind. Lands in Phase 2b, BEFORE any public multi-tenant exposure.
+  *Progress (2026-07-04):* **Stage 1** (pairing X25519 → shared channel key on both sides) and
+  **Stage 2** (AEAD seal primitive `shared/protocol/seal.ts`, `sealEnvelope`/`openEnvelope`) are DONE
+  and tested (9 seal tests). **Stage 3** (wire seal/open into the transports so the relay forwards
+  ciphertext) is designed but PAUSED for owner review — it changes the live message path and encodes
+  security decisions (key-selection by `kid`, single-active-browser broadcast degradation, and a
+  downgrade-rejection rule). Full plan + decisions: [notes/issue-15-payload-encryption.md](../notes/issue-15-payload-encryption.md).
+  Key finding: the relay never parses frames (routes by socket-registered deviceId), so Stage 3 needs
+  NO relay changes.
 - **#16 [RESOLVED 2026-07-02] Relay silently fell back to the insecure dev token in production.**
   `packages/relay/src/index.ts` used `dev-relay-token` with only a console warning when RELAY_TOKEN
   was unset — a prod-deploy footgun. Fixed: when `NODE_ENV=production`, the relay now hard-exits

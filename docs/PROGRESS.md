@@ -40,7 +40,9 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 | 6 | **Phase 1** — multi-tenant shell: pairing protocol, relay authz, daemon enrollment, web auth+CSP, Supabase migrations | **DONE** (119/120 tests; e2e flake ISSUES #13) |
 | 6S | [GATE] Real Supabase project applied (S1.6) | TODO (manual; tracked in supabase/README.md) |
 | 7 | **M2 / Phase 2a** — real `ClaudeAgentEngine` + `WCC_ENGINE=claude` | **DONE** (9 new tests; 132/132 total; 0A gate PASS) |
-| 7D | Dogfood: owner drives a real task from the browser against this machine | TODO (queued; friction list feeds Phase 2b) |
+| 7D | Dogfood: owner drives a real task from the browser against this machine | TODO — run flow ready: `npm run dev:relay` / `dev:daemon` / `dev:web`, phone steps in [RUN-LOCAL.md](./RUN-LOCAL.md) |
+| P1 | Personal-first re-cut: one-command local run + LAN reachability for the phone | **DONE** (dev:relay/dev:daemon scripts, Vite host:true, RUN-LOCAL guide) |
+| #15 | Payload E2E encryption (pre-public-launch req) | **Stage 1+2 DONE** (X25519 channel key + AEAD seal primitive, +9 tests); Stage 3 wiring designed & paused for review — see [note](./notes/issue-15-payload-encryption.md) |
 
 ## How to resume
 1. Read this file's Status board.
@@ -55,6 +57,17 @@ docs/            — this trail: PROGRESS, PLAN, milestones/, notes/ (per-task),
 - Build all: `npm run build`.
 
 ## Changelog (newest first)
+- 2026-07-04 — **Personal-first re-cut (P1) + payload-encryption Stages 1–2.** Owner scoped the
+  project to a personal self-hosted tool first (drive Claude from the phone; multi-project + phone
+  preview later), product deferred. Roadmap re-cut P1 local prototype → P2 internet → P3 multi-project
+  → P4 phone preview (plan file `actually-my-plan-is-steady-sphinx.md`). **P1 shipped:** `dev:relay` /
+  `dev:daemon` npm scripts (tsx), Vite `host:true` for LAN, [RUN-LOCAL.md](RUN-LOCAL.md) phone guide;
+  verified stack starts + web serves on the LAN, 139 tests green. **#15 Stages 1–2 shipped:** pairing
+  now derives a shared X25519 channel key both sides, and `shared/protocol/seal.ts` provides the AEAD
+  `sealEnvelope`/`openEnvelope` (AES-GCM, deviceId AAD, sign-then-encrypt). +9 seal tests → **148/148**,
+  typecheck clean. #15 Stage 3 (transport wiring) designed but PAUSED for owner review (security-
+  critical live path; key finding: relay is transparent, needs no changes). See
+  [notes/issue-15-payload-encryption.md](notes/issue-15-payload-encryption.md).
 - 2026-07-03 — **M2 / Phase 2a done: real `ClaudeAgentEngine` behind `IAgentEngine`.** The 0A/0B
   gate that had blocked two phases ran on THIS machine and passed on the first attempt (spike:
   file write via canUseTool, multi-turn, interrupt, resume-with-context). 0B research found the
