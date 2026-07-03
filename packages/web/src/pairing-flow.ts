@@ -16,7 +16,9 @@
 
 import {
   buildEnrollRequest,
+  deriveChannelKeyFromRaw,
   fromBase64Url,
+  generateX25519KeyPair,
   isEnrollAck,
   toBase64Url,
   verifyEnrollAck,
@@ -38,6 +40,13 @@ export interface PairingResult {
   keyId: string;
   enrolledAt: number;
   devicePubKey: string; // base64url
+  /**
+   * Phase 2b (ISSUES #15): base64url 32-byte symmetric channel key derived from the browser's
+   * X25519 private key + the daemon's X25519 public key (returned in the ack) via ECDH → HKDF.
+   * Absent when either side skipped X25519 (backward-compat with Phase-1 pairings). Stage 2 will
+   * feed this key into an AEAD wrapper on both directions of the transport.
+   */
+  channelKey?: string;
 }
 
 export type PairingErrorReason =
@@ -130,6 +139,16 @@ export async function startPairing(args: StartPairingArgs): Promise<PairingResul
   const timeoutMs = args.timeoutMs ?? 30_000;
   const storage = args.storage === undefined ? localStoragePairingStorage : args.storage;
 
+  // Phase 2b: mint an ephemeral X25519 keypair for the channel-key ECDH exchange. If keygen
+  // fails (very old runtime, no WebCrypto X25519), pair without encryption — the enroll_request
+  // integrity checks still hold; we just don't get the channel key.
+  let ourX25519: Awaited<ReturnType<typeof generateX25519KeyPair>> | undefined;
+  try {
+    ourX25519 = await generateX25519KeyPair();
+  } catch {
+    ourX25519 = undefined;
+  }
+
   let off: (() => void) | undefined;
   return new Promise<PairingResult>(async (resolve, reject) => {
     const timer = setTimeout(() => {
@@ -155,10 +174,26 @@ export async function startPairing(args: StartPairingArgs): Promise<PairingResul
       });
       if (!valid) return reject(new PairingError("signature_invalid"));
       if (!ack.keyId) return reject(new PairingError("unknown", "ack missing keyId"));
+
+      // Phase 2b: derive the channel key iff both sides included an X25519 pubkey. If the daemon
+      // doesn't advertise deviceX25519PubKey the ack still validates — we just skip encryption
+      // for this pairing.
+      let channelKeyB64: string | undefined;
+      if (ourX25519 && ack.deviceX25519PubKey) {
+        try {
+          const peerX = fromBase64Url(ack.deviceX25519PubKey);
+          const key = await deriveChannelKeyFromRaw(ourX25519.privateKey, peerX, args.browserPubKey);
+          channelKeyB64 = toBase64Url(key);
+        } catch {
+          channelKeyB64 = undefined;
+        }
+      }
+
       const result: PairingResult = {
         keyId: ack.keyId,
         enrolledAt: ack.enrolledAt ?? (args.now ?? Date.now)(),
         devicePubKey: ack.devicePubKey,
+        ...(channelKeyB64 ? { channelKey: channelKeyB64 } : {}),
       };
       if (storage) {
         const map = storage.load();
@@ -174,6 +209,7 @@ export async function startPairing(args: StartPairingArgs): Promise<PairingResul
         pairingCode: args.code,
         ...(args.label ? { label: args.label } : {}),
         ...(args.now ? { timestamp: args.now() } : {}),
+        ...(ourX25519 ? { browserX25519PubKey: ourX25519.publicKey } : {}),
       });
       args.transport.send(req);
     } catch (err) {

@@ -25,6 +25,11 @@ declare global {
     readonly usages: KeyUsage[];
   }
 
+  interface CryptoKeyPair {
+    publicKey: CryptoKey;
+    privateKey: CryptoKey;
+  }
+
   interface SubtleCrypto {
     digest(algorithm: string | { name: string }, data: ArrayBuffer): Promise<ArrayBuffer>;
     importKey(
@@ -34,8 +39,26 @@ declare global {
       extractable: boolean,
       usages: KeyUsage[],
     ): Promise<CryptoKey>;
+    exportKey(format: "raw", key: CryptoKey): Promise<ArrayBuffer>;
+    encrypt(
+      algorithm: { name: string; iv: ArrayBuffer; additionalData?: ArrayBuffer },
+      key: CryptoKey,
+      data: ArrayBuffer,
+    ): Promise<ArrayBuffer>;
+    decrypt(
+      algorithm: { name: string; iv: ArrayBuffer; additionalData?: ArrayBuffer },
+      key: CryptoKey,
+      data: ArrayBuffer,
+    ): Promise<ArrayBuffer>;
+    generateKey(
+      algorithm: string | { name: string },
+      extractable: boolean,
+      usages: KeyUsage[],
+    ): Promise<CryptoKey | CryptoKeyPair>;
     deriveBits(
-      algorithm: { name: string; hash: string; salt: ArrayBuffer; info: ArrayBuffer },
+      algorithm:
+        | { name: string; hash: string; salt: ArrayBuffer; info: ArrayBuffer }
+        | { name: string; public: CryptoKey },
       baseKey: CryptoKey,
       length: number,
     ): Promise<ArrayBuffer>;

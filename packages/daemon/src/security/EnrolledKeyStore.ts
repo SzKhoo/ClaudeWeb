@@ -22,6 +22,12 @@ export interface EnrolledKey {
   enrolledAt: number;
   revoked?: boolean;
   revokedAt?: number;
+  /**
+   * Phase 2b: base64url 32-byte symmetric channel key (X25519 ECDH → HKDF), derived at enrollment
+   * from the browser's X25519 pubkey and our ephemeral X25519 private key. Absent for Phase-1
+   * enrollments that pre-date payload encryption. Stage 2 will feed this into an AEAD wrapper.
+   */
+  channelKey?: string;
 }
 
 export interface EnrolledKeyStoreFile {
@@ -82,6 +88,8 @@ export class EnrolledKeyStore implements PairingKeyStore {
     label?: string;
     enrolledAt: number;
     keyId: string;
+    /** Phase 2b: optional derived channel key (base64url). */
+    channelKey?: string;
   }): Promise<EnrolledKey> {
     const pubB64 = toBase64Url(args.pubkey);
     const existing = this.findActiveByPubkey(pubB64);
@@ -91,6 +99,7 @@ export class EnrolledKeyStore implements PairingKeyStore {
       pubkey: pubB64,
       enrolledAt: args.enrolledAt,
       ...(args.label ? { label: args.label } : {}),
+      ...(args.channelKey ? { channelKey: args.channelKey } : {}),
     };
     this.records.push(rec);
     this.rebuildActive();

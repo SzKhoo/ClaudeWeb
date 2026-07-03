@@ -12,8 +12,11 @@
 
 import {
   buildEnrollAck,
+  deriveChannelKeyFromRaw,
   fromBase64Url,
+  generateX25519KeyPair,
   isEnrollRequest,
+  toBase64Url,
   verifyEnrollRequest,
   type EnrollAck,
   type EnrollFailReason,
@@ -116,15 +119,44 @@ export class EnrollmentManager {
       return this.fail(req.browserPubKey, "consumed");
     }
 
+    // Phase 2b: if the browser included an X25519 pubkey, generate our own X25519 keypair, derive
+    // the channel key, and persist it on the enrolled record. The browser derives the same key
+    // when it verifies the ack. If the browser omitted its X25519 pubkey we fall back to the
+    // Phase-1 shape (no encryption yet) so migration is smooth — Stage 2 wires the AEAD layer.
+    let ourX25519PubKey: Uint8Array | undefined;
+    let channelKey: Uint8Array | undefined;
+    if (req.browserX25519PubKey) {
+      try {
+        const ours = await generateX25519KeyPair();
+        ourX25519PubKey = ours.publicKey;
+        const peerX = fromBase64Url(req.browserX25519PubKey);
+        // Contextual salt = the browser's Ed25519 signing pubkey — a value both sides agree on and
+        // that's already integrity-protected by the enroll_request tag.
+        channelKey = await deriveChannelKeyFromRaw(
+          ours.privateKey,
+          peerX,
+          fromBase64Url(req.browserPubKey),
+        );
+      } catch (err) {
+        this.log("warn", "x25519 derivation failed; enrolling without channel key", {
+          err: String(err),
+        });
+        ourX25519PubKey = undefined;
+        channelKey = undefined;
+      }
+    }
+
     const enrolled: EnrolledKey = await this.enrolledKeys.enroll({
       pubkey: fromBase64Url(req.browserPubKey),
       ...(req.label ? { label: req.label } : {}),
       enrolledAt: this.now(),
       keyId: this.newKeyId(),
+      ...(channelKey ? { channelKey: toBase64Url(channelKey) } : {}),
     });
     this.log("info", "enrolled browser key", {
       keyId: enrolled.keyId,
       label: enrolled.label,
+      channelKey: channelKey ? "derived" : "none",
     });
 
     return buildEnrollAck({
@@ -135,6 +167,7 @@ export class EnrollmentManager {
       keyId: enrolled.keyId,
       enrolledAt: enrolled.enrolledAt,
       timestamp: this.now(),
+      ...(ourX25519PubKey ? { deviceX25519PubKey: ourX25519PubKey } : {}),
     });
   }
 

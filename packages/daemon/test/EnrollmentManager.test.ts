@@ -8,9 +8,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildEnrollRequest,
+  deriveChannelKeyFromRaw,
   fromBase64Url,
   generateCode,
   generateKeyPair,
+  generateX25519KeyPair,
   toBase64Url,
   verifyEnrollAck,
   type KeyPair,

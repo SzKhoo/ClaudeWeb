@@ -52,6 +52,12 @@ export interface EnrollRequest {
   label?: string;
   /** epoch ms — freshness gate. */
   timestamp: number;
+  /**
+   * Phase 2b (ISSUES #15): base64url X25519 pubkey the browser contributes to derive the payload
+   * encryption channel key. Optional so Phase-0/-1 pairings without X25519 still verify; once the
+   * daemon sees this field it is bound into the HMAC tag alongside every other request field.
+   */
+  browserX25519PubKey?: string;
 }
 
 export type EnrollFailReason =
@@ -78,6 +84,12 @@ export interface EnrollAck {
   /** epoch ms. */
   timestamp: number;
   reason?: EnrollFailReason;
+  /**
+   * Phase 2b (ISSUES #15): base64url X25519 pubkey the daemon contributes to derive the payload
+   * encryption channel key. Optional so Phase-0/-1 acks without X25519 still verify; when present
+   * it is bound into the Ed25519 deviceSig (canonical view includes it), so a relay cannot swap it.
+   */
+  deviceX25519PubKey?: string;
 }
 
 export type PairingMessage = EnrollRequest | EnrollAck;
@@ -121,6 +133,9 @@ function reqTaggedView(r: Omit<EnrollRequest, "tag">): unknown {
     hkdfSalt: r.hkdfSalt,
     label: r.label,
     timestamp: r.timestamp,
+    // Optional: only included when present. `canonicalize` drops undefined keys, so a request
+    // WITHOUT X25519 hashes identically to the Phase-1 view — backward compatible.
+    browserX25519PubKey: r.browserX25519PubKey,
   };
 }
 
@@ -134,6 +149,8 @@ function ackSignableView(a: Omit<EnrollAck, "deviceSig">): unknown {
     enrolledAt: a.enrolledAt,
     timestamp: a.timestamp,
     reason: a.reason,
+    // Optional; same backward-compat argument as reqTaggedView.
+    deviceX25519PubKey: a.deviceX25519PubKey,
   };
 }
 
@@ -148,6 +165,11 @@ export interface BuildEnrollRequestArgs {
   timestamp?: number;
   /** Inject a salt (deterministic tests). Defaults to 16 fresh random bytes. */
   hkdfSalt?: Uint8Array;
+  /**
+   * Phase 2b: raw 32-byte X25519 pubkey to contribute toward the payload encryption channel key.
+   * Optional — omit for the legacy Phase-1 pairing shape (unencrypted-payload compatibility).
+   */
+  browserX25519PubKey?: Uint8Array;
 }
 
 export async function buildEnrollRequest(args: BuildEnrollRequestArgs): Promise<EnrollRequest> {
@@ -161,6 +183,9 @@ export async function buildEnrollRequest(args: BuildEnrollRequestArgs): Promise<
     hkdfSalt: toBase64Url(salt),
     timestamp: args.timestamp ?? Date.now(),
     ...(args.label ? { label: args.label } : {}),
+    ...(args.browserX25519PubKey
+      ? { browserX25519PubKey: toBase64Url(args.browserX25519PubKey) }
+      : {}),
   };
   const key = await hkdfHmacKey(code, salt, HKDF_INFO);
   const bytes = ENC.encode(canonicalize(reqTaggedView(partial)));
@@ -212,6 +237,9 @@ export async function verifyEnrollRequest(
     hkdfSalt: args.request.hkdfSalt,
     timestamp: args.request.timestamp,
     ...(args.request.label !== undefined ? { label: args.request.label } : {}),
+    ...(args.request.browserX25519PubKey !== undefined
+      ? { browserX25519PubKey: args.request.browserX25519PubKey }
+      : {}),
   };
   const bytes = ENC.encode(canonicalize(reqTaggedView(partial)));
   const valid = await hmacVerify(key, bytes, tag);
@@ -231,6 +259,11 @@ export interface BuildEnrollAckArgs {
   enrolledAt?: number;
   timestamp?: number;
   reason?: EnrollFailReason;
+  /**
+   * Phase 2b: raw 32-byte X25519 pubkey contributed by the daemon toward the channel key.
+   * Included in the ack's signable view, so a relay cannot swap it without breaking the Ed25519 sig.
+   */
+  deviceX25519PubKey?: Uint8Array;
 }
 
 export async function buildEnrollAck(args: BuildEnrollAckArgs): Promise<EnrollAck> {
@@ -243,6 +276,9 @@ export async function buildEnrollAck(args: BuildEnrollAckArgs): Promise<EnrollAc
     ...(args.devicePubKey ? { devicePubKey: toBase64Url(args.devicePubKey) } : {}),
     ...(args.enrolledAt !== undefined ? { enrolledAt: args.enrolledAt } : {}),
     ...(args.reason ? { reason: args.reason } : {}),
+    ...(args.deviceX25519PubKey
+      ? { deviceX25519PubKey: toBase64Url(args.deviceX25519PubKey) }
+      : {}),
   };
   if (args.ok && args.deviceSecretKey) {
     const bytes = ENC.encode(canonicalize(ackSignableView(ack)));
@@ -281,6 +317,9 @@ export async function verifyEnrollAck(args: VerifyEnrollAckArgs): Promise<boolea
     ...(args.ack.devicePubKey !== undefined ? { devicePubKey: args.ack.devicePubKey } : {}),
     ...(args.ack.enrolledAt !== undefined ? { enrolledAt: args.ack.enrolledAt } : {}),
     ...(args.ack.reason !== undefined ? { reason: args.ack.reason } : {}),
+    ...(args.ack.deviceX25519PubKey !== undefined
+      ? { deviceX25519PubKey: args.ack.deviceX25519PubKey }
+      : {}),
   };
   const bytes = ENC.encode(canonicalize(ackSignableView(partial)));
   try {
