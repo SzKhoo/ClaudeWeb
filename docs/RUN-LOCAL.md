@@ -7,6 +7,21 @@ the whole idea before we add internet access (P2), multi-project (P3), and phone
 Three processes run on the laptop: **relay** (WebSocket hub), **daemon** (security boundary + the real
 `claude` engine), and **web** (the Vite UI). The phone is just a browser pointed at the laptop.
 
+## Quickstart — one command
+
+```powershell
+$env:WCC_WORKSPACE_ROOT = "D:\Personal\YourProject"   # the ONE project to drive
+npm run dev:all
+```
+
+`dev:all` ([scripts/dev.mjs](../scripts/dev.mjs)) boots all three, **auto-detects your LAN IP**, wires
+the browser's relay URL to it, and prints the phone URL + pairing code. It starts them sequentially
+(one at a time) so this machine's small pagefile (ISSUES #7) doesn't crash a process on cold start.
+Defaults: `WCC_ENGINE=claude`, `RELAY_PORT=8787`, `WEB_PORT=5179`. Ctrl+C stops everything. Then jump
+to **step 4 (Pair the phone)** below.
+
+The manual 3-terminal flow below is the fallback if you want separate logs or hit a launcher issue.
+
 ## 0. Find your laptop's LAN IP
 
 ```powershell
