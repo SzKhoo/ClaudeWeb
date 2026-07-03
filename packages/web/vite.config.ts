@@ -16,6 +16,9 @@ export default defineConfig({
     },
   },
   server: {
+    // host:true binds 0.0.0.0 so a phone on the same Wi-Fi can reach the UI at the laptop's LAN IP
+    // (P1 local-phone flow — see docs/RUN-LOCAL.md). CSP already allows ws:/wss: for the LAN relay.
+    host: true,
     port: 5179,
     strictPort: false,
   },
