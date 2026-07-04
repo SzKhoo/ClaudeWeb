@@ -13,6 +13,7 @@ import {
   type SdkMessage,
   type SdkQuery,
   type SdkQueryArgs,
+  type SdkUserMessage,
 } from "../src/engine/ClaudeAgentEngine.js";
 
 interface Harness {
@@ -21,6 +22,7 @@ interface Harness {
   canUseTool: () => SdkCanUseTool | undefined;
   waitForMessages: (n: number) => Promise<void>;
   sentTurns: () => string[];
+  sentMessages: () => SdkUserMessage[];
   optionsLog: () => Record<string, unknown>[];
   queryFn: (args: SdkQueryArgs) => SdkQuery;
 }
@@ -30,7 +32,7 @@ function makeHarness(): Harness {
   let deliver: ((m: SdkMessage) => void) | undefined;
   let interruptCount = 0;
   let canUseTool: SdkCanUseTool | undefined;
-  const sentTurns: string[] = [];
+  const sent: SdkUserMessage[] = [];
   const optionsLog: Record<string, unknown>[] = [];
 
   const queryFn = (args: SdkQueryArgs): SdkQuery => {
@@ -47,7 +49,7 @@ function makeHarness(): Harness {
     };
     // Drain the input channel in the background to see what the engine sends.
     void (async () => {
-      for await (const um of args.prompt) sentTurns.push(um.message.content);
+      for await (const um of args.prompt) sent.push(um);
     })();
     return {
       async interrupt() {
@@ -75,7 +77,11 @@ function makeHarness(): Harness {
     waitForMessages: async (n) => {
       for (let i = 0; i < 200 && consumed.length < n; i++) await tick();
     },
-    sentTurns: () => sentTurns,
+    sentTurns: () =>
+      sent
+        .map((m) => m.message.content)
+        .filter((c): c is string => typeof c === "string"),
+    sentMessages: () => sent,
     optionsLog: () => optionsLog,
     queryFn,
   };
@@ -186,6 +192,50 @@ describe("ClaudeAgentEngine — SDK → IAgentEngine mapping", () => {
     await engine.send("second");
     await drain();
     expect(h.sentTurns()).toEqual(["first", "second"]);
+  });
+
+  it("send with an image attachment builds a content-block array: text + image block", async () => {
+    const h = makeHarness();
+    const { engine } = await connect(h);
+    await engine.send("look at this", [{ name: "a.png", mediaType: "image/png", data: "QUJD" }]);
+    await drain();
+    const content = h.sentMessages().at(-1)!.message.content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content).toEqual([
+      { type: "text", text: "look at this" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "QUJD" } },
+    ]);
+  });
+
+  it("send with a text attachment inlines it as a text block naming the file", async () => {
+    const h = makeHarness();
+    const { engine } = await connect(h);
+    // base64("hi\nthere") = "aGkKdGhlcmU="
+    await engine.send("read it", [{ name: "notes.txt", mediaType: "text/plain", data: "aGkKdGhlcmU=" }]);
+    await drain();
+    const content = h.sentMessages().at(-1)!.message.content as Array<{ type: string; text?: string }>;
+    const inlined = content.find((b) => b.type === "text" && b.text?.includes("notes.txt"));
+    expect(inlined?.text).toContain("hi\nthere");
+  });
+
+  it("send with a PDF attachment builds a document block", async () => {
+    const h = makeHarness();
+    const { engine } = await connect(h);
+    await engine.send("summarize", [{ name: "doc.pdf", mediaType: "application/pdf", data: "JVBER" }]);
+    await drain();
+    const content = h.sentMessages().at(-1)!.message.content as Array<Record<string, unknown>>;
+    expect(content).toContainEqual({
+      type: "document",
+      source: { type: "base64", media_type: "application/pdf", data: "JVBER" },
+    });
+  });
+
+  it("send with no attachments keeps content as a plain string (backward compatible)", async () => {
+    const h = makeHarness();
+    const { engine } = await connect(h);
+    await engine.send("just text");
+    await drain();
+    expect(h.sentMessages().at(-1)!.message.content).toBe("just text");
   });
 
   it("passes model + effort from constructor options into the initial SDK query", async () => {

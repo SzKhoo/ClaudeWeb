@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative } from "node:path";
 import type {
+  Attachment,
   ConversationCheckpoint,
   EngineConfig,
   EngineConnectOptions,
@@ -48,24 +49,25 @@ export class MockEngine implements IAgentEngine {
       : { checkpointId: randomUUID() };
   }
 
-  async send(text: string): Promise<void> {
+  async send(text: string, attachments?: Attachment[]): Promise<void> {
     if (this.turnActive) throw new Error("MockEngine: a turn is already active");
     this.turnActive = true;
     this.interrupted = false;
     // Run the turn in the background; resolves immediately (turn accepted, not finished).
-    void this.runTurn(text).finally(() => {
+    void this.runTurn(text, attachments ?? []).finally(() => {
       this.turnActive = false;
     });
   }
 
-  private async runTurn(text: string): Promise<void> {
+  private async runTurn(text: string, attachments: Attachment[]): Promise<void> {
     this.emit({ type: "assistant_delta", text: "Working on it… " });
     await tick();
     if (this.interrupted) return this.finish("interrupted");
 
     const write = parseWriteIntent(text);
     if (!write) {
-      this.emit({ type: "assistant_message", text: `You said: ${text}` });
+      const note = attachments.length > 0 ? ` (received ${attachments.length} attachment(s): ${attachments.map((a) => a.name).join(", ")})` : "";
+      this.emit({ type: "assistant_message", text: `You said: ${text}${note}` });
       return this.finish("ok");
     }
 

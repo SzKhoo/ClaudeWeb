@@ -47,7 +47,7 @@ export interface ConversationCheckpoint {
   checkpointId: string;
 }
 
-import type { EffortLevel } from "../protocol/messages.js";
+import type { Attachment, EffortLevel } from "../protocol/messages.js";
 
 /** Runtime-adjustable settings for the conversation (applied to subsequent turns). */
 export interface EngineConfig {
@@ -59,8 +59,11 @@ export interface IAgentEngine {
   /** Start (or attach to) an agent runtime for one workspace/session. */
   connect(options: EngineConnectOptions): Promise<void>;
 
-  /** Send a user prompt to begin a turn. Resolves when the turn is accepted (not when it finishes). */
-  send(text: string): Promise<void>;
+  /**
+   * Send a user prompt to begin a turn. Resolves when the turn is accepted (not when it finishes).
+   * `attachments` (images/PDF/text) ride along as agent content blocks.
+   */
+  send(text: string, attachments?: Attachment[]): Promise<void>;
 
   /** Update the model / reasoning effort applied to subsequent turns. */
   configure(config: EngineConfig): Promise<void>;

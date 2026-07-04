@@ -1,7 +1,10 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type {
   ApplicationCommand,
   ApplicationEvent,
+  EvtFileData,
   EvtPermissionRequest,
   EvtTurnComplete,
 } from "@wcc/shared";
@@ -160,6 +163,68 @@ describe("Session", () => {
       | undefined;
     expect(status?.model).toBe("claude-opus-4-8");
     expect(status?.effort).toBe("high");
+  });
+
+  it("forwards user_message attachments to the engine", async () => {
+    const h = makeHarness(root);
+    await h.session.start();
+    await h.session.handleCommand(
+      {
+        type: "user_message",
+        text: "look at this",
+        attachments: [{ name: "shot.png", mediaType: "image/png", data: "QUJD" }],
+      },
+      CLIENT,
+    );
+    await waitUntil(() => firstOfType(h.out, "turn_complete") !== undefined);
+    // MockEngine echoes the attachment names it received.
+    const echoed = broadcasts(h.out).some(
+      (e) => e.type === "assistant_message" && e.text.includes("shot.png"),
+    );
+    expect(echoed).toBe(true);
+  });
+
+  it("serves a file_request by returning the file bytes (base64), targeted to the requesting client", async () => {
+    const h = makeHarness(root);
+    await h.session.start();
+    writeFileSync(join(root, "report.md"), "# hello\n", "utf8");
+
+    await h.session.handleCommand({ type: "file_request", requestId: "fr-1", path: "report.md" }, CLIENT);
+
+    const data = h.out.find((o) => o.to === CLIENT && o.event.type === "file_data");
+    expect(data).toBeDefined();
+    const evt = data!.event as EvtFileData;
+    expect(evt.requestId).toBe("fr-1");
+    expect(evt.name).toBe("report.md");
+    expect(evt.error).toBeUndefined();
+    expect(Buffer.from(evt.data!, "base64").toString("utf8")).toBe("# hello\n");
+  });
+
+  it("rejects a file_request that escapes the workspace root", async () => {
+    const h = makeHarness(root);
+    await h.session.start();
+
+    await h.session.handleCommand(
+      { type: "file_request", requestId: "fr-2", path: "../../secret.txt" },
+      CLIENT,
+    );
+
+    const data = h.out.find((o) => o.to === CLIENT && o.event.type === "file_data");
+    const evt = data!.event as EvtFileData;
+    expect(evt.data).toBeUndefined();
+    expect(evt.error).toBeTruthy();
+  });
+
+  it("returns an error file_data for a missing file", async () => {
+    const h = makeHarness(root);
+    await h.session.start();
+
+    await h.session.handleCommand({ type: "file_request", requestId: "fr-3", path: "nope.txt" }, CLIENT);
+
+    const data = h.out.find((o) => o.to === CLIENT && o.event.type === "file_data");
+    const evt = data!.event as EvtFileData;
+    expect(evt.data).toBeUndefined();
+    expect(evt.error).toBeTruthy();
   });
 
   it("interrupts a turn that is awaiting approval", async () => {

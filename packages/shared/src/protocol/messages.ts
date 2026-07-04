@@ -61,11 +61,27 @@ export interface DiffPreview {
   truncated?: boolean;
 }
 
+/**
+ * A file the user attaches to a prompt (image, PDF, text, …). The bytes ride inline as base64 so the
+ * whole thing stays one signed command (no side-channel upload). The daemon turns images/PDFs into
+ * agent content blocks and inlines text; large files are the caller's responsibility to keep sane.
+ */
+export interface Attachment {
+  /** Original filename, used for display + as a hint to the agent. */
+  name: string;
+  /** MIME type, e.g. "image/png", "application/pdf", "text/plain". */
+  mediaType: string;
+  /** base64-encoded file bytes (no data: URL prefix). */
+  data: string;
+}
+
 // ───────────────────────────── commands (client -> daemon) ─────────────────────────────
 
 export interface CmdUserMessage {
   type: "user_message";
   text: string;
+  /** Files the user attached to this prompt (images/PDF/text). Omitted when there are none. */
+  attachments?: Attachment[];
 }
 
 export interface CmdPermissionResponse {
@@ -94,6 +110,19 @@ export interface CmdSessionConfig {
   model?: string;
   /** Reasoning effort. Omit to leave unchanged. */
   effort?: EffortLevel;
+}
+
+/**
+ * Ask the daemon to send back the contents of a file in the active workspace (so the phone/browser can
+ * download it). The daemon reads it under the workspace root only (traversal + absolute paths rejected)
+ * and replies with a targeted `file_data` event carrying the bytes (base64) or an error.
+ */
+export interface CmdFileRequest {
+  type: "file_request";
+  /** Correlates the reply `file_data` event back to this request. */
+  requestId: string;
+  /** Path relative to the active workspace root. Absolute paths / traversal are rejected. */
+  path: string;
 }
 
 export interface CmdInterrupt {
@@ -131,6 +160,7 @@ export type ApplicationCommand =
   | CmdPolicyUpdate
   | CmdSwitchWorkspace
   | CmdSessionConfig
+  | CmdFileRequest
   | CmdInterrupt
   | CmdSessionControl
   | CmdResume
@@ -228,6 +258,29 @@ export interface EvtSessionEnded {
   reason: string;
 }
 
+/**
+ * Reply to a `file_request`: the bytes of a workspace file (base64) for the browser to download, or an
+ * error if it couldn't be read. Delivered targeted to the requesting client, out-of-band (seq 0) — it
+ * is not part of the ordered transcript.
+ */
+export interface EvtFileData {
+  type: "file_data";
+  /** Echoes the request's requestId. */
+  requestId: string;
+  /** The workspace-relative path that was requested. */
+  path: string;
+  /** Basename, used as the download filename. */
+  name: string;
+  /** Guessed MIME type for the download. */
+  mediaType: string;
+  /** base64 file bytes; present on success. */
+  data?: string;
+  /** Human-readable reason; present on failure (then `data` is absent). */
+  error?: string;
+  /** True if the file exceeded the transfer cap and `data` is a prefix. */
+  truncated?: boolean;
+}
+
 export type ApplicationEvent =
   | EvtAssistantDelta
   | EvtAssistantMessage
@@ -240,7 +293,8 @@ export type ApplicationEvent =
   | EvtSystemMessage
   | EvtError
   | EvtTurnComplete
-  | EvtSessionEnded;
+  | EvtSessionEnded
+  | EvtFileData;
 
 export type EventType = ApplicationEvent["type"];
 
@@ -254,6 +308,7 @@ const COMMAND_TYPES: ReadonlySet<string> = new Set<CommandType>([
   "policy_update",
   "switch_workspace",
   "session_config",
+  "file_request",
   "interrupt",
   "session_control",
   "resume",

@@ -14,13 +14,17 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { basename, extname, isAbsolute, join, normalize, relative } from "node:path";
 import type {
   ApplicationCommand,
   ApplicationEvent,
+  Attachment,
   DiffPreview,
   EffortLevel,
   EngineEvent,
   EnginePermissionRequest,
+  EvtFileData,
   ExecutionMode,
   IAgentEngine,
   PermissionDecision,
@@ -64,6 +68,9 @@ interface PendingPermission {
 }
 
 const DEFAULT_PERMISSION_TIMEOUT_MS = 5 * 60_000;
+
+/** Max raw bytes returned for a file_request. base64 inflates ~1.33x; kept well under the relay's 16MB frame cap. */
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 export class Session {
   readonly sessionId: string;
@@ -114,7 +121,10 @@ export class Session {
   async handleCommand(command: ApplicationCommand, clientInstanceId: string): Promise<void> {
     switch (command.type) {
       case "user_message":
-        await this.startTurn(command.text);
+        await this.startTurn(command.text, command.attachments);
+        return;
+      case "file_request":
+        await this.serveFileRequest(clientInstanceId, command.requestId, command.path);
         return;
       case "permission_response":
         await this.resolvePermission(command.requestId, command.decision, command.scope);
@@ -169,7 +179,7 @@ export class Session {
 
   // ───────────────────────────── turns ─────────────────────────────
 
-  private async startTurn(text: string): Promise<void> {
+  private async startTurn(text: string, attachments?: Attachment[]): Promise<void> {
     if (this.currentTurnId) {
       this.pushSystem("warn", "A turn is already running; ignoring the new message.");
       return;
@@ -179,7 +189,7 @@ export class Session {
     this.storage.turnStart(turnId);
     this.setState("thinking");
     try {
-      await this.engine.send(text);
+      await this.engine.send(text, attachments);
     } catch (err) {
       this.completeTurn("error", String(err));
     }
@@ -340,6 +350,52 @@ export class Session {
     });
   }
 
+  // ───────────────────────────── file download ─────────────────────────────
+
+  /**
+   * Read a workspace file and hand its bytes (base64) to one requesting client. Reads are confined to
+   * the workspace root (absolute paths + `..` traversal rejected) and capped at MAX_FILE_BYTES. The
+   * reply is targeted + out-of-band (seq 0): it is a download side-channel, not part of the transcript.
+   */
+  private async serveFileRequest(
+    clientInstanceId: string,
+    requestId: string,
+    reqPath: string,
+  ): Promise<void> {
+    const name = basename(reqPath) || "download";
+    const mediaType = guessMediaType(reqPath);
+    const reply = (extra: Partial<EvtFileData>): void => {
+      this.deliver({
+        seq: 0,
+        to: clientInstanceId,
+        event: { type: "file_data", requestId, path: reqPath, name, mediaType, ...extra },
+      });
+    };
+
+    const abs = this.safeResolve(reqPath);
+    if (!abs) {
+      reply({ error: "Path escapes the workspace root." });
+      return;
+    }
+    try {
+      const buf = await readFile(abs);
+      const truncated = buf.length > MAX_FILE_BYTES;
+      const bytes = truncated ? buf.subarray(0, MAX_FILE_BYTES) : buf;
+      reply({ data: bytes.toString("base64"), ...(truncated ? { truncated: true } : {}) });
+    } catch (err) {
+      reply({ error: `Could not read ${reqPath}: ${(err as { code?: string }).code ?? String(err)}` });
+    }
+  }
+
+  /** Join a workspace-relative path under the root, returning undefined if it escapes or is absolute. */
+  private safeResolve(p: string): string | undefined {
+    if (!p || isAbsolute(p)) return undefined;
+    const abs = normalize(join(this.workspace.root, p));
+    const rel = relative(this.workspace.root, abs);
+    if (rel.startsWith("..") || isAbsolute(rel)) return undefined;
+    return abs;
+  }
+
   // ───────────────────────────── session lifecycle ─────────────────────────────
 
   private endSession(reason: string): void {
@@ -381,6 +437,32 @@ export class Session {
       ...(this.effort !== undefined ? { effort: this.effort } : {}),
     };
   }
+}
+
+/** A small extension→MIME map for download hints; falls back to a generic binary type. */
+const MIME_BY_EXT: Record<string, string> = {
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".json": "application/json",
+  ".js": "text/javascript",
+  ".ts": "text/plain",
+  ".tsx": "text/plain",
+  ".css": "text/css",
+  ".html": "text/html",
+  ".csv": "text/csv",
+  ".xml": "application/xml",
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".zip": "application/zip",
+};
+
+function guessMediaType(p: string): string {
+  return MIME_BY_EXT[extname(p).toLowerCase()] ?? "application/octet-stream";
 }
 
 /** Build a DiffPreview from an engine permission request, if it carried a unified diff. */

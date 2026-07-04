@@ -19,6 +19,7 @@
 import { randomUUID } from "node:crypto";
 import { isAbsolute, relative } from "node:path";
 import type {
+  Attachment,
   ConversationCheckpoint,
   EffortLevel,
   EngineConfig,
@@ -50,9 +51,16 @@ export interface SdkQueryArgs {
 }
 export type SdkQueryFn = (args: SdkQueryArgs) => SdkQuery;
 
+/** A block in an SDK user message — text, an inline image, or an inline document (PDF). */
+export type SdkContentBlockParam =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+  | { type: "document"; source: { type: "base64"; media_type: string; data: string } };
+
 export interface SdkUserMessage {
   type: "user";
-  message: { role: "user"; content: string };
+  /** A plain string for text-only turns; an array of content blocks when attachments ride along. */
+  message: { role: "user"; content: string | SdkContentBlockParam[] };
   parent_tool_use_id: null;
 }
 
@@ -143,7 +151,7 @@ export class ClaudeAgentEngine implements IAgentEngine {
     return mod.query;
   }
 
-  async send(text: string): Promise<void> {
+  async send(text: string, attachments?: Attachment[]): Promise<void> {
     if (!this.channel) throw new Error("ClaudeAgentEngine: connect() before send()");
     // A pending configure() (model/effort change) takes effect here: restart the query with the new
     // options, resuming the same conversation so context is preserved. Applying it at send-time (not
@@ -154,7 +162,11 @@ export class ClaudeAgentEngine implements IAgentEngine {
       await this.startQuery(this.checkpoint?.checkpointId);
     }
     this.interrupted = false;
-    this.channel!.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null });
+    // Text-only turns stay a plain string (backward compatible); attachments turn the message into an
+    // array of content blocks (text first, then each file as image/document/inlined-text).
+    const content =
+      attachments && attachments.length > 0 ? buildContent(text, attachments) : text;
+    this.channel!.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null });
   }
 
   async configure(config: EngineConfig): Promise<void> {
@@ -354,6 +366,42 @@ class InputChannel implements AsyncIterable<SdkUserMessage> {
       yield next.value;
     }
   }
+}
+
+/**
+ * Turn a prompt + attachments into SDK content blocks:
+ *   - images  → image blocks (base64)
+ *   - PDFs    → document blocks (base64)
+ *   - text/*  → inlined as a fenced text block naming the file (so the model can read it)
+ *   - other   → a short text note (binary we won't inline)
+ * The prompt text is always the first block.
+ */
+function buildContent(text: string, attachments: Attachment[]): SdkContentBlockParam[] {
+  const blocks: SdkContentBlockParam[] = [{ type: "text", text }];
+  for (const a of attachments) {
+    if (a.mediaType.startsWith("image/")) {
+      blocks.push({ type: "image", source: { type: "base64", media_type: a.mediaType, data: a.data } });
+    } else if (a.mediaType === "application/pdf") {
+      blocks.push({ type: "document", source: { type: "base64", media_type: a.mediaType, data: a.data } });
+    } else if (a.mediaType.startsWith("text/") || isProbablyText(a.mediaType)) {
+      const decoded = Buffer.from(a.data, "base64").toString("utf8");
+      blocks.push({ type: "text", text: `Attached file ${a.name}:\n\n${decoded}` });
+    } else {
+      blocks.push({ type: "text", text: `[Attached ${a.name} (${a.mediaType}) — binary, not inlined]` });
+    }
+  }
+  return blocks;
+}
+
+/** Text-ish MIME types that aren't literally `text/*` but are safe to inline as UTF-8. */
+function isProbablyText(mediaType: string): boolean {
+  return (
+    mediaType === "application/json" ||
+    mediaType === "application/xml" ||
+    mediaType === "application/javascript" ||
+    mediaType.endsWith("+json") ||
+    mediaType.endsWith("+xml")
+  );
 }
 
 function stringifyToolContent(content: unknown): string {
