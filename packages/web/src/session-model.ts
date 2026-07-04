@@ -14,8 +14,14 @@ import type {
   SessionState,
 } from "@wcc/shared";
 
+/** Lightweight attachment descriptor shown on a user bubble (no bytes — just name + type). */
+export interface AttachmentMeta {
+  name: string;
+  mediaType: string;
+}
+
 export type TranscriptItem =
-  | { kind: "user"; id: string; text: string }
+  | { kind: "user"; id: string; text: string; attachments?: AttachmentMeta[] }
   | { kind: "assistant"; id: string; text: string; streaming: boolean }
   | {
       kind: "tool";
@@ -61,8 +67,13 @@ export class SessionModel {
   private counter = 0;
 
   /** Record a locally-sent user message so it shows immediately (it isn't echoed back as an event). */
-  addLocalUserMessage(text: string): void {
-    this.items.push({ kind: "user", id: this.nextId("u"), text });
+  addLocalUserMessage(text: string, attachments?: AttachmentMeta[]): void {
+    this.items.push({
+      kind: "user",
+      id: this.nextId("u"),
+      text,
+      ...(attachments && attachments.length > 0 ? { attachments } : {}),
+    });
     // A new turn supersedes any finished streaming bubble.
     this.liveAssistantId = undefined;
   }

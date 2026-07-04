@@ -1,16 +1,42 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { EffortLevel, ExecutionMode, PermissionDecision, PermissionScope } from "@wcc/shared";
+import type {
+  ApplicationEvent,
+  Attachment,
+  EffortLevel,
+  ExecutionMode,
+  PermissionDecision,
+  PermissionScope,
+} from "@wcc/shared";
 import { loadConfig } from "./config.js";
 import { loadOrCreateIdentity, type Identity } from "./identity.js";
 import { Connection, type ConnectionStatus } from "./protocol-client.js";
 import { SessionModel, type SessionView } from "./session-model.js";
+import { downloadBase64, randomId } from "./attachments.js";
 import { StatusBar } from "./ui/StatusBar.js";
 import { Transcript } from "./ui/Transcript.js";
 import { PermissionPrompt } from "./ui/PermissionPrompt.js";
 import { Composer } from "./ui/Composer.js";
+import { DownloadBar } from "./ui/DownloadBar.js";
 import { Phase1Shell } from "./Phase1Shell.js";
 
 const EMPTY_VIEW: SessionView = { items: [], state: "idle" };
+
+/** A file_data reply: trigger a browser download on success, or surface the error in the transcript. */
+function handleFileData(
+  model: SessionModel,
+  e: Extract<ApplicationEvent, { type: "file_data" }>,
+): void {
+  if (e.data !== undefined) {
+    downloadBase64(e.name, e.mediaType, e.data);
+    model.apply({
+      type: "system_message",
+      level: "info",
+      text: `Downloaded ${e.name}${e.truncated ? " (truncated — file exceeded the transfer cap)" : ""}.`,
+    });
+  } else {
+    model.apply({ type: "system_message", level: "error", text: e.error ?? `Could not download ${e.path}.` });
+  }
+}
 
 export function App() {
   // Phase 1 multi-tenant shell: opt-in via ?phase=1 (URL query). Default = Phase 0 single-tenant path
@@ -47,6 +73,11 @@ function Phase0App() {
         clientInstanceId: id.clientInstanceId,
         secretKey: id.secretKey,
         onEvent: (e) => {
+          if (e.type === "file_data") {
+            handleFileData(model, e);
+            setView(model.view());
+            return;
+          }
           model.apply(e);
           setView(model.view());
         },
@@ -62,13 +93,20 @@ function Phase0App() {
     };
   }, []);
 
-  const sendMessage = useCallback((text: string) => {
+  const sendMessage = useCallback((text: string, attachments?: Attachment[]) => {
     const model = modelRef.current;
     const conn = connRef.current;
     if (!model || !conn) return;
-    model.addLocalUserMessage(text);
+    model.addLocalUserMessage(
+      text,
+      attachments?.map((a) => ({ name: a.name, mediaType: a.mediaType })),
+    );
     setView(model.view());
-    void conn.send({ type: "user_message", text });
+    void conn.send({ type: "user_message", text, ...(attachments?.length ? { attachments } : {}) });
+  }, []);
+
+  const requestFile = useCallback((path: string) => {
+    void connRef.current?.send({ type: "file_request", requestId: randomId(), path });
   }, []);
 
   const decide = useCallback(
@@ -103,8 +141,9 @@ function Phase0App() {
   return (
     <div className="app">
       <StatusBar status={status} view={view} identity={identity} onMode={setMode} onConfig={setConfig} />
-      <Transcript items={view.items} />
+      <Transcript items={view.items} onDownload={requestFile} />
       {view.pending && <PermissionPrompt pending={view.pending} onDecide={decide} />}
+      <DownloadBar onRequest={requestFile} canSend={status === "ready"} />
       <Composer onSend={sendMessage} canSend={status === "ready"} busy={busy} onInterrupt={interrupt} />
     </div>
   );

@@ -348,6 +348,89 @@ body {
   color: #9da7b3;
 }
 
+/* ── download bar ── */
+.download-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.download-bar.open {
+  gap: 8px;
+}
+.download-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.download-input:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+.tool-download {
+  margin-left: 8px;
+  font-size: 13px;
+  padding: 0 4px;
+}
+
+/* ── attachment chips ── */
+.composer-wrap {
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.composer-wrap .composer {
+  border-top: none;
+}
+.attach-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px 0;
+}
+.attach-chips.sent {
+  padding: 6px 0 0;
+}
+.attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 60vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.attach-x {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 0 0 2px;
+}
+.attach-x:hover {
+  color: var(--red);
+}
+.btn.attach {
+  padding: 8px 10px;
+  font-size: 16px;
+  line-height: 1;
+}
+
 /* ── composer ── */
 .composer {
   display: flex;

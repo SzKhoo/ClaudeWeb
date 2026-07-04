@@ -80,6 +80,20 @@ describe("SessionModel", () => {
     expect((last as { text: string }).text).toContain("daemon restarted mid-turn");
   });
 
+  it("records attachment metadata on a local user message", () => {
+    const m = new SessionModel();
+    m.addLocalUserMessage("look at this", [
+      { name: "shot.png", mediaType: "image/png" },
+      { name: "notes.txt", mediaType: "text/plain" },
+    ]);
+    const first = items(m)[0];
+    expect(first).toMatchObject({ kind: "user", text: "look at this" });
+    expect((first as { attachments?: unknown }).attachments).toEqual([
+      { name: "shot.png", mediaType: "image/png" },
+      { name: "notes.txt", mediaType: "text/plain" },
+    ]);
+  });
+
   it("shows local user messages immediately and records errors + session end", () => {
     const m = new SessionModel();
     m.addLocalUserMessage("create hello.txt");
