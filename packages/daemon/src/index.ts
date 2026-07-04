@@ -24,7 +24,7 @@ import { Daemon } from "./Daemon.js";
 import { DaemonClient } from "./transport/DaemonClient.js";
 import { MockEngine } from "./engine/MockEngine.js";
 import { ClaudeAgentEngine } from "./engine/ClaudeAgentEngine.js";
-import type { IAgentEngine } from "@wcc/shared";
+import type { EffortLevel, IAgentEngine } from "@wcc/shared";
 import { FileJournal } from "./storage/journal.js";
 import { PairingStore } from "./security/CommandVerifier.js";
 import { EnrolledKeyStore } from "./security/EnrolledKeyStore.js";
@@ -93,9 +93,13 @@ async function main(): Promise<void> {
     // this machine's local Claude Code login (see docs/notes/task-07-real-engine.md). No API key.
     engine = new ClaudeAgentEngine({
       ...(env["WCC_MODEL"] ? { model: env["WCC_MODEL"] } : {}),
+      ...(env["WCC_EFFORT"] ? { effort: env["WCC_EFFORT"] as EffortLevel } : {}),
       logger,
     });
-    logger("info", "using ClaudeAgentEngine", { model: env["WCC_MODEL"] ?? "(CLI default)" });
+    logger("info", "using ClaudeAgentEngine", {
+      model: env["WCC_MODEL"] ?? "(CLI default)",
+      effort: env["WCC_EFFORT"] ?? "(CLI default)",
+    });
   } else {
     logger("error", `WCC_ENGINE=${engineKind} unknown; use "mock" or "claude".`);
     process.exit(2);

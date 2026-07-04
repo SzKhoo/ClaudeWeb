@@ -47,12 +47,23 @@ export interface ConversationCheckpoint {
   checkpointId: string;
 }
 
+import type { EffortLevel } from "../protocol/messages.js";
+
+/** Runtime-adjustable settings for the conversation (applied to subsequent turns). */
+export interface EngineConfig {
+  model?: string;
+  effort?: EffortLevel;
+}
+
 export interface IAgentEngine {
   /** Start (or attach to) an agent runtime for one workspace/session. */
   connect(options: EngineConnectOptions): Promise<void>;
 
   /** Send a user prompt to begin a turn. Resolves when the turn is accepted (not when it finishes). */
   send(text: string): Promise<void>;
+
+  /** Update the model / reasoning effort applied to subsequent turns. */
+  configure(config: EngineConfig): Promise<void>;
 
   /** Resolve an outstanding permission request as approved. */
   approveTool(requestId: string, scope?: "once" | "session"): Promise<void>;

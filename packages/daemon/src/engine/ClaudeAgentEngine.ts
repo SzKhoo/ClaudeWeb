@@ -20,6 +20,8 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute, relative } from "node:path";
 import type {
   ConversationCheckpoint,
+  EffortLevel,
+  EngineConfig,
   EngineConnectOptions,
   EngineEvent,
   EnginePermissionRequest,
@@ -76,6 +78,8 @@ export interface SdkContentBlock {
 export interface ClaudeAgentEngineOptions {
   /** Model id (defaults to the CLI's configured model when unset). */
   model?: string;
+  /** Initial reasoning effort (defaults to the CLI's configured effort when unset). */
+  effort?: EffortLevel;
   /** Inject the SDK `query` fn (tests). Omit in production → lazy import of the real SDK. */
   queryFn?: SdkQueryFn;
   /** Extra options merged into the SDK query `options` (advanced/testing). */
@@ -96,10 +100,16 @@ export class ClaudeAgentEngine implements IAgentEngine {
   private q: SdkQuery | undefined;
   private channel: InputChannel | undefined;
   private interrupted = false;
+  private model: string | undefined;
+  private effort: EffortLevel | undefined;
+  /** Set by configure(); the next send() restarts the query so new model/effort take effect. */
+  private needsRestart = false;
   private readonly log: NonNullable<ClaudeAgentEngineOptions["logger"]>;
 
   constructor(private readonly opts: ClaudeAgentEngineOptions = {}) {
     this.queryFn = opts.queryFn;
+    this.model = opts.model;
+    this.effort = opts.effort;
     this.log = opts.logger ?? (() => {});
   }
 
@@ -117,7 +127,8 @@ export class ClaudeAgentEngine implements IAgentEngine {
       permissionMode: "default",
       includePartialMessages: true,
       canUseTool: this.makeCanUseTool(),
-      ...(this.opts.model ? { model: this.opts.model } : {}),
+      ...(this.model ? { model: this.model } : {}),
+      ...(this.effort ? { effort: this.effort } : {}),
       ...(resume ? { resume } : {}),
       ...(this.opts.extraOptions ?? {}),
     };
@@ -134,8 +145,22 @@ export class ClaudeAgentEngine implements IAgentEngine {
 
   async send(text: string): Promise<void> {
     if (!this.channel) throw new Error("ClaudeAgentEngine: connect() before send()");
+    // A pending configure() (model/effort change) takes effect here: restart the query with the new
+    // options, resuming the same conversation so context is preserved. Applying it at send-time (not
+    // at configure-time) means a change never disrupts an in-flight turn — it lands on the next one.
+    if (this.needsRestart) {
+      this.needsRestart = false;
+      this.channel.close();
+      await this.startQuery(this.checkpoint?.checkpointId);
+    }
     this.interrupted = false;
-    this.channel.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null });
+    this.channel!.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null });
+  }
+
+  async configure(config: EngineConfig): Promise<void> {
+    if (config.model !== undefined) this.model = config.model;
+    if (config.effort !== undefined) this.effort = config.effort;
+    this.needsRestart = true;
   }
 
   async approveTool(requestId: string): Promise<void> {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ExecutionMode, PermissionDecision, PermissionScope } from "@wcc/shared";
+import type { EffortLevel, ExecutionMode, PermissionDecision, PermissionScope } from "@wcc/shared";
 import { loadConfig } from "./config.js";
 import { loadOrCreateIdentity, type Identity } from "./identity.js";
 import { Connection, type ConnectionStatus } from "./protocol-client.js";
@@ -91,12 +91,18 @@ function Phase0App() {
     void connRef.current?.send({ type: "policy_update", executionMode });
   }, []);
 
+  const setConfig = useCallback((config: { model?: string; effort?: EffortLevel }) => {
+    // An empty-string model/effort is the explicit "reset to the daemon's default" signal (the engine
+    // treats it as falsy). Absent fields are left unchanged by the daemon.
+    void connRef.current?.send({ type: "session_config", ...config });
+  }, []);
+
   const busy =
     view.state === "thinking" || view.state === "tool-running" || view.state === "awaiting-approval";
 
   return (
     <div className="app">
-      <StatusBar status={status} view={view} identity={identity} onMode={setMode} />
+      <StatusBar status={status} view={view} identity={identity} onMode={setMode} onConfig={setConfig} />
       <Transcript items={view.items} />
       {view.pending && <PermissionPrompt pending={view.pending} onDecide={decide} />}
       <Composer onSend={sendMessage} canSend={status === "ready"} busy={busy} onInterrupt={interrupt} />

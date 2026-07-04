@@ -18,6 +18,9 @@ export type ExecutionMode =
   | "auto-edits" // file edits auto-approved; Bash/network still require approval
   | "yolo"; // everything auto-approved (never the default; opt-in, audited)
 
+/** Reasoning effort level the model spends per turn (maps to the SDK's `effort` option). */
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
 /** Liveness/health of the machine the daemon runs on. */
 export interface MachineState {
   online: boolean;
@@ -84,6 +87,15 @@ export interface CmdSwitchWorkspace {
   workspaceId: string;
 }
 
+/** Change the model and/or reasoning effort for subsequent turns. */
+export interface CmdSessionConfig {
+  type: "session_config";
+  /** Model id (e.g. "claude-opus-4-8"). Omit to leave unchanged. */
+  model?: string;
+  /** Reasoning effort. Omit to leave unchanged. */
+  effort?: EffortLevel;
+}
+
 export interface CmdInterrupt {
   type: "interrupt";
 }
@@ -118,6 +130,7 @@ export type ApplicationCommand =
   | CmdPermissionResponse
   | CmdPolicyUpdate
   | CmdSwitchWorkspace
+  | CmdSessionConfig
   | CmdInterrupt
   | CmdSessionControl
   | CmdResume
@@ -177,6 +190,10 @@ export interface EvtSessionStatus {
   state: SessionState;
   workspaceId?: string;
   executionMode?: ExecutionMode;
+  /** Current model id in effect for this session (if set). */
+  model?: string;
+  /** Current reasoning effort in effect for this session (if set). */
+  effort?: EffortLevel;
 }
 
 export interface EvtMachineState {
@@ -236,6 +253,7 @@ const COMMAND_TYPES: ReadonlySet<string> = new Set<CommandType>([
   "permission_response",
   "policy_update",
   "switch_workspace",
+  "session_config",
   "interrupt",
   "session_control",
   "resume",

@@ -9,6 +9,7 @@
 import type {
   ApplicationEvent,
   DiffPreview,
+  EffortLevel,
   ExecutionMode,
   SessionState,
 } from "@wcc/shared";
@@ -41,6 +42,8 @@ export interface SessionView {
   pending?: PendingPermission;
   state: SessionState;
   executionMode?: ExecutionMode;
+  model?: string;
+  effort?: EffortLevel;
   workspaceId?: string;
   ended?: { reason: string };
 }
@@ -50,6 +53,8 @@ export class SessionModel {
   private pending: PendingPermission | undefined;
   private state: SessionState = "idle";
   private executionMode: ExecutionMode | undefined;
+  private model: string | undefined;
+  private effort: EffortLevel | undefined;
   private workspaceId: string | undefined;
   private ended: { reason: string } | undefined;
   private liveAssistantId: string | undefined;
@@ -103,6 +108,8 @@ export class SessionModel {
       case "session_status":
         this.state = event.state;
         if (event.executionMode !== undefined) this.executionMode = event.executionMode;
+        if (event.model !== undefined) this.model = event.model;
+        if (event.effort !== undefined) this.effort = event.effort;
         if (event.workspaceId !== undefined) this.workspaceId = event.workspaceId;
         if (event.state !== "awaiting-approval") this.pending = undefined;
         return;
@@ -145,6 +152,8 @@ export class SessionModel {
       ...(this.pending ? { pending: this.pending } : {}),
       state: this.state,
       ...(this.executionMode !== undefined ? { executionMode: this.executionMode } : {}),
+      ...(this.model !== undefined ? { model: this.model } : {}),
+      ...(this.effort !== undefined ? { effort: this.effort } : {}),
       ...(this.workspaceId !== undefined ? { workspaceId: this.workspaceId } : {}),
       ...(this.ended ? { ended: this.ended } : {}),
     };

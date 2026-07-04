@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ExecutionMode, PermissionDecision, PermissionScope } from "@wcc/shared";
+import type { EffortLevel, ExecutionMode, PermissionDecision, PermissionScope } from "@wcc/shared";
 import { fromBase64Url } from "@wcc/shared";
 import {
   MockAuthClient,
@@ -274,6 +274,10 @@ function LiveSession({
     void connRef.current?.send({ type: "policy_update", executionMode });
   }, []);
 
+  const setConfig = useCallback((config: { model?: string; effort?: EffortLevel }) => {
+    void connRef.current?.send({ type: "session_config", ...config });
+  }, []);
+
   const busy =
     view.state === "thinking" || view.state === "tool-running" || view.state === "awaiting-approval";
 
@@ -281,7 +285,7 @@ function LiveSession({
 
   return (
     <div className="app">
-      <StatusBar status={status} view={view} identity={state.identity} onMode={setMode} />
+      <StatusBar status={status} view={view} identity={state.identity} onMode={setMode} onConfig={setConfig} />
       <div className="phase-bar">
         Signed in as <code>{state.session.email ?? state.session.userId}</code> · device{" "}
         <code>{settings.deviceId}</code>

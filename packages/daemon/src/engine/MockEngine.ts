@@ -15,6 +15,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative } from "node:path";
 import type {
   ConversationCheckpoint,
+  EngineConfig,
   EngineConnectOptions,
   EngineEvent,
   EnginePermissionRequest,
@@ -33,6 +34,12 @@ export class MockEngine implements IAgentEngine {
   private readonly pending = new Map<string, (d: Decision) => void>();
   private interrupted = false;
   private turnActive = false;
+  /** Last model/effort applied via configure() — exposed for assertions and status echo. */
+  config: EngineConfig = {};
+
+  async configure(config: EngineConfig): Promise<void> {
+    this.config = { ...this.config, ...config };
+  }
 
   async connect(options: EngineConnectOptions): Promise<void> {
     this.workspaceRoot = options.workspaceRoot;

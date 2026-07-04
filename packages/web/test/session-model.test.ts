@@ -62,6 +62,14 @@ describe("SessionModel", () => {
     expect(v.workspaceId).toBe("default");
   });
 
+  it("tracks model + effort from session_status", () => {
+    const m = new SessionModel();
+    m.apply({ type: "session_status", state: "idle", model: "claude-opus-4-8", effort: "high" });
+    const v = m.view();
+    expect(v.model).toBe("claude-opus-4-8");
+    expect(v.effort).toBe("high");
+  });
+
   it("adds a system item for a non-ok turn_complete and clears pending", () => {
     const m = new SessionModel();
     m.apply({ type: "permission_request", requestId: "r", toolName: "Write", input: {} });

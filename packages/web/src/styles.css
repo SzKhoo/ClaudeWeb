@@ -118,13 +118,16 @@ body {
   color: var(--muted);
   font-size: 12px;
 }
-.mode select {
+.mode select,
+.picker {
   background: var(--bg-card);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 3px 6px;
   font-family: var(--mono);
+  font-size: 12px;
+  max-width: 42vw; /* keep long model names from overflowing a phone row */
 }
 .link {
   background: none;

@@ -21,6 +21,7 @@ interface Harness {
   canUseTool: () => SdkCanUseTool | undefined;
   waitForMessages: (n: number) => Promise<void>;
   sentTurns: () => string[];
+  optionsLog: () => Record<string, unknown>[];
   queryFn: (args: SdkQueryArgs) => SdkQuery;
 }
 
@@ -30,8 +31,10 @@ function makeHarness(): Harness {
   let interruptCount = 0;
   let canUseTool: SdkCanUseTool | undefined;
   const sentTurns: string[] = [];
+  const optionsLog: Record<string, unknown>[] = [];
 
   const queryFn = (args: SdkQueryArgs): SdkQuery => {
+    optionsLog.push(args.options);
     canUseTool = args.options["canUseTool"] as SdkCanUseTool;
     const queue: SdkMessage[] = [];
     const waiters: Array<(r: IteratorResult<SdkMessage>) => void> = [];
@@ -73,6 +76,7 @@ function makeHarness(): Harness {
       for (let i = 0; i < 200 && consumed.length < n; i++) await tick();
     },
     sentTurns: () => sentTurns,
+    optionsLog: () => optionsLog,
     queryFn,
   };
 }
@@ -182,6 +186,39 @@ describe("ClaudeAgentEngine — SDK → IAgentEngine mapping", () => {
     await engine.send("second");
     await drain();
     expect(h.sentTurns()).toEqual(["first", "second"]);
+  });
+
+  it("passes model + effort from constructor options into the initial SDK query", async () => {
+    const h = makeHarness();
+    const engine = new ClaudeAgentEngine({ queryFn: h.queryFn, model: "claude-opus-4-8", effort: "high" });
+    await engine.connect({ workspaceRoot: "E:/tmp/eng" });
+    expect(h.optionsLog()[0]).toMatchObject({ model: "claude-opus-4-8", effort: "high" });
+  });
+
+  it("configure(model, effort) applies to the next turn by restarting the query, preserving resume + context", async () => {
+    const h = makeHarness();
+    const { engine } = await connect(h);
+    h.emitFromSdk({ type: "system", subtype: "init", session_id: "sess-1" });
+    await drain();
+    expect(h.optionsLog()).toHaveLength(1); // still on the original query
+
+    await engine.configure({ model: "claude-sonnet-5", effort: "xhigh" });
+    await engine.send("go");
+    await drain();
+
+    expect(h.optionsLog()).toHaveLength(2); // configure took effect on the next send → query restarted
+    expect(h.optionsLog()[1]).toMatchObject({ model: "claude-sonnet-5", effort: "xhigh", resume: "sess-1" });
+    expect(h.sentTurns()).toContain("go"); // the message was delivered on the new query
+  });
+
+  it("configure with only effort leaves the model unchanged", async () => {
+    const h = makeHarness();
+    const engine = new ClaudeAgentEngine({ queryFn: h.queryFn, model: "claude-opus-4-8" });
+    await engine.connect({ workspaceRoot: "E:/tmp/eng" });
+    await engine.configure({ effort: "low" });
+    await engine.send("hi");
+    await drain();
+    expect(h.optionsLog()[1]).toMatchObject({ model: "claude-opus-4-8", effort: "low" });
   });
 
   it("resumeConversation restarts the SDK query with resume=checkpoint and remembers it", async () => {

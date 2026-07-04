@@ -19,6 +19,7 @@ interface Harness {
   out: OutgoingEvent[];
   journal: InMemoryJournal;
   workspace: Workspace;
+  engine: MockEngine;
   root: string;
 }
 
@@ -35,7 +36,7 @@ function makeHarness(root: string, journal = new InMemoryJournal()): Harness {
     deliver: (o) => out.push(o),
     permissionTimeoutMs: 50,
   });
-  return { session, out, journal, workspace, root };
+  return { session, out, journal, workspace, engine, root };
 }
 
 const broadcasts = (out: OutgoingEvent[]): ApplicationEvent[] =>
@@ -142,6 +143,23 @@ describe("Session", () => {
     await waitUntil(() => firstOfType(h.out, "turn_complete") !== undefined);
     expect(firstOfType(h.out, "permission_request")).toBeUndefined();
     expect(fileExists(root, "auto.txt")).toBe(true);
+  });
+
+  it("applies session_config to the engine and echoes model + effort in session_status", async () => {
+    const h = makeHarness(root);
+    await h.session.start();
+    await h.session.handleCommand(
+      { type: "session_config", model: "claude-opus-4-8", effort: "high" },
+      CLIENT,
+    );
+    // Delegated to the engine…
+    expect(h.engine.config).toEqual({ model: "claude-opus-4-8", effort: "high" });
+    // …and reflected in the status snapshot the UI reads.
+    const status = broadcasts(h.out).filter((e) => e.type === "session_status").at(-1) as
+      | Extract<ApplicationEvent, { type: "session_status" }>
+      | undefined;
+    expect(status?.model).toBe("claude-opus-4-8");
+    expect(status?.effort).toBe("high");
   });
 
   it("interrupts a turn that is awaiting approval", async () => {

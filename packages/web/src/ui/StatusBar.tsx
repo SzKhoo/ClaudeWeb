@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ExecutionMode } from "@wcc/shared";
+import type { EffortLevel, ExecutionMode } from "@wcc/shared";
 import type { SessionView } from "../session-model.js";
 import type { ConnectionStatus } from "../protocol-client.js";
 import type { Identity } from "../identity.js";
@@ -23,17 +23,35 @@ const STATE_LABEL: Record<string, string> = {
 
 const MODES: ExecutionMode[] = ["manual", "auto-edits", "yolo"];
 
-/** Header: connection health, session state, execution-mode selector, and the pairing public key. */
+/** Selectable models. Empty id = leave the daemon's default (CLI-configured) model unchanged. */
+const MODELS: Array<{ id: string; label: string }> = [
+  { id: "", label: "model: default" },
+  { id: "claude-opus-4-8", label: "Opus 4.8" },
+  { id: "claude-sonnet-5", label: "Sonnet 5" },
+  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
+];
+const EFFORTS: Array<{ id: string; label: string }> = [
+  { id: "", label: "effort: default" },
+  { id: "low", label: "low" },
+  { id: "medium", label: "medium" },
+  { id: "high", label: "high" },
+  { id: "xhigh", label: "xhigh" },
+  { id: "max", label: "max" },
+];
+
+/** Header: connection health, session state, model/effort + execution-mode selectors, pairing key. */
 export function StatusBar({
   status,
   view,
   identity,
   onMode,
+  onConfig,
 }: {
   status: ConnectionStatus;
   view: SessionView;
   identity: Identity | null;
   onMode: (mode: ExecutionMode) => void;
+  onConfig: (config: { model?: string; effort?: EffortLevel }) => void;
 }) {
   const [showKey, setShowKey] = useState(false);
   const online = status === "ready";
@@ -51,6 +69,30 @@ export function StatusBar({
         {view.workspaceId && <span className="workspace">@{view.workspaceId}</span>}
       </div>
       <div className="status-controls">
+        <select
+          className="picker"
+          value={view.model ?? ""}
+          title="Model"
+          onChange={(e) => onConfig({ model: e.target.value })}
+        >
+          {MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="picker"
+          value={view.effort ?? ""}
+          title="Reasoning effort"
+          onChange={(e) => onConfig({ effort: e.target.value as EffortLevel })}
+        >
+          {EFFORTS.map((eff) => (
+            <option key={eff.id} value={eff.id}>
+              {eff.label}
+            </option>
+          ))}
+        </select>
         <label className="mode">
           mode
           <select value={view.executionMode ?? "manual"} onChange={(e) => onMode(e.target.value as ExecutionMode)}>

@@ -18,6 +18,7 @@ import type {
   ApplicationCommand,
   ApplicationEvent,
   DiffPreview,
+  EffortLevel,
   EngineEvent,
   EnginePermissionRequest,
   ExecutionMode,
@@ -74,6 +75,8 @@ export class Session {
   private readonly now: () => number;
 
   private state: SessionState = "idle";
+  private model: string | undefined;
+  private effort: EffortLevel | undefined;
   private currentTurnId: string | undefined;
   private readonly pending = new Map<string, PendingPermission>();
   private readonly unsubscribers: Array<() => void> = [];
@@ -121,6 +124,15 @@ export class Session {
           ...(command.executionMode ? { executionMode: command.executionMode } : {}),
           ...(command.allowTools ? { allowTools: command.allowTools } : {}),
         });
+        this.pushStatus();
+        return;
+      case "session_config":
+        await this.engine.configure({
+          ...(command.model !== undefined ? { model: command.model } : {}),
+          ...(command.effort !== undefined ? { effort: command.effort } : {}),
+        });
+        if (command.model !== undefined) this.model = command.model;
+        if (command.effort !== undefined) this.effort = command.effort;
         this.pushStatus();
         return;
       case "interrupt":
@@ -365,6 +377,8 @@ export class Session {
       state: this.state,
       workspaceId: this.workspace.workspaceId,
       executionMode: mode,
+      ...(this.model !== undefined ? { model: this.model } : {}),
+      ...(this.effort !== undefined ? { effort: this.effort } : {}),
     };
   }
 }
