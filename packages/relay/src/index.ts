@@ -51,7 +51,9 @@ async function buildAuthFromEnv(): Promise<AuthVerifier | undefined> {
 }
 
 async function main(): Promise<void> {
-  const port = Number(process.env["RELAY_PORT"] ?? 8787);
+  // Honor the platform convention `PORT` (Render/Railway/Heroku/Fly inject it) while keeping the
+  // explicit RELAY_PORT override; fall back to 8787 for local dev.
+  const port = Number(process.env["RELAY_PORT"] ?? process.env["PORT"] ?? 8787);
   const auth = await buildAuthFromEnv();
   let token = process.env["RELAY_TOKEN"] ?? "";
   if (!auth && !token) {

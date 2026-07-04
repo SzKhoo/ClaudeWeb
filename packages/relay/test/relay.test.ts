@@ -106,6 +106,14 @@ describe("RelayServer", () => {
     await c.waitClose();
   });
 
+  it("serves an HTTP 200 health check at /healthz (for platform probes)", async () => {
+    const httpUrl = url.replace(/^ws/, "http") + "/healthz";
+    const res = await fetch(httpUrl);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: true });
+  });
+
   it("rejects a malformed first frame", async () => {
     const c = await client();
     c.send("this is not json");

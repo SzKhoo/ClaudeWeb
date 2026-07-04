@@ -16,6 +16,7 @@
  */
 
 import { timingSafeEqual } from "node:crypto";
+import { createServer, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
 import {
@@ -87,6 +88,7 @@ export class RelayServer {
     logger: Logger;
   };
   private wss?: WebSocketServer;
+  private httpServer?: HttpServer;
   private heartbeat?: NodeJS.Timeout;
   private readonly devices = new Map<string, DeviceBucket>();
   private readonly conns = new Set<Conn>();
@@ -110,23 +112,31 @@ export class RelayServer {
   /** Start listening. Resolves with the actual bound port (useful when port=0 in tests). */
   start(): Promise<{ port: number }> {
     return new Promise((resolve, reject) => {
-      const wss = new WebSocketServer({
-        port: this.opts.port,
-        host: this.opts.host,
-        maxPayload: this.opts.maxPayloadBytes,
+      // A tiny HTTP server sits in front of the WS upgrade so PaaS platforms (Render/Railway/Fly) can
+      // probe liveness at /healthz. It never touches WS payloads — the relay stays a dumb pipe.
+      const httpServer = createServer((req, res) => {
+        if (req.method === "GET" && (req.url === "/healthz" || req.url === "/")) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, service: "wcc-relay" }));
+          return;
+        }
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "not_found" }));
       });
+      const wss = new WebSocketServer({ server: httpServer, maxPayload: this.opts.maxPayloadBytes });
+      this.httpServer = httpServer;
       this.wss = wss;
       wss.on("connection", (ws) => this.onConnection(ws));
       wss.on("error", (err) => this.opts.logger("error", "wss error", { err: String(err) }));
-      wss.once("listening", () => {
-        const addr = wss.address() as AddressInfo;
+      httpServer.once("error", reject);
+      httpServer.listen(this.opts.port, this.opts.host, () => {
+        const addr = httpServer.address() as AddressInfo;
         this.heartbeat = setInterval(() => this.pingAll(), this.opts.heartbeatMs);
         // Don't keep the process alive solely for the heartbeat timer.
         this.heartbeat.unref?.();
         this.opts.logger("info", "relay listening", { port: addr.port });
         resolve({ port: addr.port });
       });
-      wss.once("error", reject);
     });
   }
 
@@ -145,8 +155,13 @@ export class RelayServer {
       }
       this.conns.clear();
       this.devices.clear();
-      if (!this.wss) return resolve();
-      this.wss.close(() => resolve());
+      const closeHttp = () => {
+        if (!this.httpServer) return resolve();
+        this.httpServer.close(() => resolve());
+        this.httpServer = undefined;
+      };
+      if (!this.wss) return closeHttp();
+      this.wss.close(closeHttp);
     });
   }
 

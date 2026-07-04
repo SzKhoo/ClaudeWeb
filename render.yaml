@@ -1,0 +1,16 @@
+# Render.com blueprint for the WebClaudeCode relay. One-click: push this repo to GitHub, then in
+# Render → "New +" → "Blueprint" and point it at the repo. Render builds the Dockerfile, injects PORT,
+# and gives you a public https/wss URL. Set that URL as WCC_RELAY_URL (daemon) + VITE_RELAY_URL (web).
+services:
+  - type: web
+    name: wcc-relay
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      # A strong shared token, generated + kept by Render. The daemon must send the same RELAY_TOKEN.
+      - key: RELAY_TOKEN
+        generateValue: true
+      - key: NODE_ENV
+        value: production

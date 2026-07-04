@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+.git
+.wcc
+dist
+*.log
+packages/web
+packages/e2e
+packages/daemon
+.claude
+docs
