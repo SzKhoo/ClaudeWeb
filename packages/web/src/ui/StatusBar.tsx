@@ -66,9 +66,9 @@ export function StatusBar({
         </button>
       </div>
       {showKey && identity && (
-        <div className="pairing">
-          <div className="pairing-label">Paste into your daemon as <code>WCC_PAIRED_PUBKEY</code>:</div>
-          <code className="pairing-key">{identity.publicKeyB64}</code>
+        <div className="pair-panel">
+          <div className="pair-panel-label">Paste into your daemon as <code>WCC_PAIRED_PUBKEY</code>:</div>
+          <code className="pair-panel-key">{identity.publicKeyB64}</code>
         </div>
       )}
     </header>

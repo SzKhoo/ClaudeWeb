@@ -28,27 +28,41 @@ body {
   color: var(--text);
   font-family: var(--sans);
   font-size: 14px;
+  /* The page itself never scrolls — only .transcript does. Kills the stray horizontal scrollbar. */
+  overflow: hidden;
 }
 
 .app {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh; /* dvh keeps the composer above the mobile browser's URL bar */
   max-width: 920px;
   margin: 0 auto;
+  overflow: hidden;
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
 }
 
 /* ── status bar ── */
 .statusbar {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
+  flex-wrap: wrap; /* on a phone the controls wrap to a new line instead of overflowing sideways */
   align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
+  gap: 6px 12px;
+  padding: 10px 14px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
+}
+.brand {
+  flex: 0 0 auto;
+}
+.status-meta {
+  flex: 1 1 auto;
+  min-width: 0; /* allow the meta row to shrink rather than push the page wider */
+}
+.status-controls {
+  margin-left: auto; /* stick controls to the right; they wrap below when there's no room */
 }
 .brand {
   font-weight: 700;
@@ -119,19 +133,22 @@ body {
   cursor: pointer;
   font-size: 12px;
 }
-.pairing {
-  grid-column: 1 / -1;
+/* Phase-0 statusbar pairing panel — distinct class so it doesn't collide with the Phase-1
+   `.pairing` login/pairing SCREEN defined lower in this file. */
+.pair-panel {
+  flex: 1 1 100%; /* own full row under the status bar */
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 12px;
 }
-.pairing-label {
+.pair-panel-label {
   color: var(--muted);
   margin-bottom: 4px;
 }
-.pairing-key {
+.pair-panel-key {
+  display: block;
   font-family: var(--mono);
   word-break: break-all;
   color: var(--green);
@@ -140,7 +157,9 @@ body {
 /* ── transcript ── */
 .transcript {
   flex: 1;
+  min-height: 0; /* let it actually scroll inside the flex column instead of growing the page */
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 18px 16px;
   display: flex;
   flex-direction: column;
