@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { TranscriptItem } from "../session-model.js";
+import { Markdown } from "./Markdown.js";
 
 /** The streaming conversation: user/assistant bubbles, tool cards, system + error lines. */
 export function Transcript({
@@ -52,8 +53,8 @@ function Item({ item, onDownload }: { item: TranscriptItem; onDownload?: (path: 
       return (
         <div className="bubble assistant">
           <span className="role">claude</span>
-          <div className="text">
-            {item.text}
+          <div className="text md-text">
+            <Markdown text={item.text} />
             {item.streaming && <span className="cursor">▍</span>}
           </div>
         </div>
