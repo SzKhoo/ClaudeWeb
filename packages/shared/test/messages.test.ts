@@ -4,6 +4,7 @@ import {
   isEvent,
   requiresSignature,
   type Attachment,
+  type CmdBundleRequest,
   type CmdFileRequest,
   type CmdUserMessage,
   type EvtFileData,
@@ -22,6 +23,17 @@ describe("message classification — attachments + file transfer", () => {
     expect(isCommand(cmd)).toBe(true);
     expect(isEvent(cmd)).toBe(false);
     expect(requiresSignature("file_request")).toBe(true);
+  });
+
+  it("treats bundle_request as a command that must be signed", () => {
+    const cmd: CmdBundleRequest = {
+      type: "bundle_request",
+      requestId: "b1",
+      paths: ["src/a.ts", "src/b.ts"],
+    };
+    expect(isCommand(cmd)).toBe(true);
+    expect(isEvent(cmd)).toBe(false);
+    expect(requiresSignature("bundle_request")).toBe(true);
   });
 
   it("treats file_data as an unsigned daemon->client event", () => {

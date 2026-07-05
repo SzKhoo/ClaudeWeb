@@ -125,6 +125,19 @@ export interface CmdFileRequest {
   path: string;
 }
 
+/**
+ * Ask the daemon to send back a single zip containing the given workspace files (the "download all
+ * files changed this turn" chip in the transcript). Each path is workspace-relative and sandboxed the
+ * same way as file_request. The reply reuses `file_data` with `mediaType: "application/zip"`.
+ */
+export interface CmdBundleRequest {
+  type: "bundle_request";
+  /** Correlates the reply `file_data` event back to this request. */
+  requestId: string;
+  /** Workspace-relative paths. Absolute paths / `..` traversal are rejected per-path by the daemon. */
+  paths: string[];
+}
+
 export interface CmdInterrupt {
   type: "interrupt";
 }
@@ -161,6 +174,7 @@ export type ApplicationCommand =
   | CmdSwitchWorkspace
   | CmdSessionConfig
   | CmdFileRequest
+  | CmdBundleRequest
   | CmdInterrupt
   | CmdSessionControl
   | CmdResume
@@ -309,6 +323,7 @@ const COMMAND_TYPES: ReadonlySet<string> = new Set<CommandType>([
   "switch_workspace",
   "session_config",
   "file_request",
+  "bundle_request",
   "interrupt",
   "session_control",
   "resume",
