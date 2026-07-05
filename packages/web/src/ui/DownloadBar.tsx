@@ -24,8 +24,12 @@ export function DownloadBar({ onRequest, canSend }: { onRequest: (path: string) 
   if (!open) {
     return (
       <div className="download-bar">
-        <button className="link" onClick={() => setOpen(true)} title="Download a file from the workspace">
-          ⬇ get a file
+        <button
+          className="link"
+          onClick={() => setOpen(true)}
+          title="Pull any file from your machine's workspace down to this device"
+        >
+          ⬇ Download a file from your machine
         </button>
       </div>
     );

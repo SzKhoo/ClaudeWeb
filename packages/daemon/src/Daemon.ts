@@ -13,6 +13,7 @@
  * every browser on the device; each browser keeps only the frames addressed to it or to "*".
  */
 
+import { hostname, platform } from "node:os";
 import {
   isTransportEnvelope,
   negotiateCapabilities,
@@ -222,6 +223,17 @@ export class Daemon {
     // Echo the target clientInstanceId so the right browser applies this ack (relay broadcasts).
     this.sendRaw({ ...ack, clientInstanceId: hello.clientInstanceId ?? "" });
     this.log("info", "handshake", { ok: ack.ok, client: hello.clientInstanceId });
+    if (ack.ok) {
+      // Publish machine identity so the browser sidebar can show which PC it's driving.
+      this.emit({
+        seq: 0,
+        to: hello.clientInstanceId ?? "*",
+        event: {
+          type: "machine_state",
+          machine: { online: true, lastSeen: this.now(), hostname: hostname(), platform: platform() },
+        },
+      });
+    }
   }
 
   private async route(env: TransportEnvelope): Promise<void> {
