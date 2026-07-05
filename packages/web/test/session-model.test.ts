@@ -106,4 +106,62 @@ describe("SessionModel", () => {
     expect(m.view().ended?.reason).toBe("client requested end");
     expect(m.view().state).toBe("ended");
   });
+
+  it("emits a bundle transcript item on turn_complete for Write/Edit tools that succeeded", () => {
+    const m = new SessionModel();
+    m.addLocalUserMessage("edit two files");
+    m.apply({ type: "tool_use", toolId: "t1", name: "Write", input: { file_path: "a.txt" } });
+    m.apply({ type: "tool_result", toolId: "t1", ok: true });
+    m.apply({ type: "tool_use", toolId: "t2", name: "Edit", input: { file_path: "b.ts" } });
+    m.apply({ type: "tool_result", toolId: "t2", ok: true });
+    m.apply({ type: "turn_complete", status: "ok" });
+
+    const list = items(m);
+    const bundle = list.find((i) => i.kind === "bundle");
+    expect(bundle).toBeDefined();
+    expect((bundle as Extract<TranscriptItem, { kind: "bundle" }>).paths).toEqual(["a.txt", "b.ts"]);
+  });
+
+  it("does not emit a bundle for Read-only turns", () => {
+    const m = new SessionModel();
+    m.addLocalUserMessage("read a file");
+    m.apply({ type: "tool_use", toolId: "r1", name: "Read", input: { file_path: "a.txt" } });
+    m.apply({ type: "tool_result", toolId: "r1", ok: true });
+    m.apply({ type: "turn_complete", status: "ok" });
+
+    expect(items(m).some((i) => i.kind === "bundle")).toBe(false);
+  });
+
+  it("excludes tool calls that failed and dedupes repeated paths", () => {
+    const m = new SessionModel();
+    m.addLocalUserMessage("edit same file twice + one failure");
+    m.apply({ type: "tool_use", toolId: "t1", name: "Edit", input: { file_path: "a.txt" } });
+    m.apply({ type: "tool_result", toolId: "t1", ok: true });
+    m.apply({ type: "tool_use", toolId: "t2", name: "Edit", input: { file_path: "a.txt" } });
+    m.apply({ type: "tool_result", toolId: "t2", ok: true });
+    m.apply({ type: "tool_use", toolId: "t3", name: "Write", input: { file_path: "b.txt" } });
+    m.apply({ type: "tool_result", toolId: "t3", ok: false });
+    m.apply({ type: "turn_complete", status: "ok" });
+
+    const bundle = items(m).find((i) => i.kind === "bundle") as
+      | Extract<TranscriptItem, { kind: "bundle" }>
+      | undefined;
+    expect(bundle).toBeDefined();
+    expect(bundle!.paths).toEqual(["a.txt"]);
+  });
+
+  it("clears the changed-files tracker at the start of the next turn", () => {
+    const m = new SessionModel();
+    m.addLocalUserMessage("turn 1");
+    m.apply({ type: "tool_use", toolId: "t1", name: "Write", input: { file_path: "a.txt" } });
+    m.apply({ type: "tool_result", toolId: "t1", ok: true });
+    m.apply({ type: "turn_complete", status: "ok" });
+    m.addLocalUserMessage("turn 2");
+    m.apply({ type: "tool_use", toolId: "r1", name: "Read", input: { file_path: "a.txt" } });
+    m.apply({ type: "tool_result", toolId: "r1", ok: true });
+    m.apply({ type: "turn_complete", status: "ok" });
+
+    const bundles = items(m).filter((i) => i.kind === "bundle");
+    expect(bundles).toHaveLength(1);
+  });
 });

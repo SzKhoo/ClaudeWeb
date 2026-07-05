@@ -15,6 +15,15 @@ import type {
   SessionState,
 } from "@wcc/shared";
 
+const EDIT_TOOL_NAMES = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
+function extractToolPath(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const rec = input as Record<string, unknown>;
+  const p = rec["file_path"] ?? rec["path"] ?? rec["notebook_path"];
+  return typeof p === "string" ? p : undefined;
+}
+
 /** Lightweight attachment descriptor shown on a user bubble (no bytes — just name + type). */
 export interface AttachmentMeta {
   name: string;
@@ -34,7 +43,8 @@ export type TranscriptItem =
       result?: { ok: boolean; summary?: string };
     }
   | { kind: "system"; id: string; level: "info" | "warn" | "error"; text: string }
-  | { kind: "error"; id: string; code: string; message: string };
+  | { kind: "error"; id: string; code: string; message: string }
+  | { kind: "bundle"; id: string; paths: string[] };
 
 export interface PendingPermission {
   requestId: string;
@@ -68,9 +78,13 @@ export class SessionModel {
   private ended: { reason: string } | undefined;
   private liveAssistantId: string | undefined;
   private counter = 0;
+  private readonly pendingEdits = new Map<string, string>(); // toolId -> path (Write/Edit family only)
+  private readonly changedThisTurn = new Set<string>();      // dedupes; iteration order = insertion
 
   /** Record a locally-sent user message so it shows immediately (it isn't echoed back as an event). */
   addLocalUserMessage(text: string, attachments?: AttachmentMeta[]): void {
+    this.pendingEdits.clear();
+    this.changedThisTurn.clear();
     this.items.push({
       kind: "user",
       id: this.nextId("u"),
@@ -99,6 +113,10 @@ export class SessionModel {
           input: event.input,
           output: "",
         });
+        if (EDIT_TOOL_NAMES.has(event.name)) {
+          const p = extractToolPath(event.input);
+          if (p) this.pendingEdits.set(event.toolId, p);
+        }
         return;
       case "tool_stream": {
         const card = this.findTool(event.toolId);
@@ -108,6 +126,11 @@ export class SessionModel {
       case "tool_result": {
         const card = this.findTool(event.toolId);
         if (card) card.result = { ok: event.ok, ...(event.summary !== undefined ? { summary: event.summary } : {}) };
+        const editPath = this.pendingEdits.get(event.toolId);
+        if (editPath !== undefined) {
+          this.pendingEdits.delete(event.toolId);
+          if (event.ok) this.changedThisTurn.add(editPath);
+        }
         return;
       }
       case "permission_request":
@@ -130,6 +153,15 @@ export class SessionModel {
       case "turn_complete":
         this.closeLiveAssistant();
         this.pending = undefined;
+        if (event.status === "ok" && this.changedThisTurn.size > 0) {
+          this.items.push({
+            kind: "bundle",
+            id: this.nextId("b"),
+            paths: Array.from(this.changedThisTurn),
+          });
+        }
+        this.pendingEdits.clear();
+        this.changedThisTurn.clear();
         if (event.status !== "ok") {
           this.items.push({
             kind: "system",
