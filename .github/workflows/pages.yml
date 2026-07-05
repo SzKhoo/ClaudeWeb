@@ -6,6 +6,8 @@ name: Deploy web client to GitHub Pages
 #
 # Note: prior runs failed because Pages was not yet enabled with "GitHub Actions" as the source.
 # Once flipped, deployment succeeds automatically on subsequent pushes.
+# GitHub's Pages deploy step occasionally returns "Deployment failed, try again later" on rapid
+# consecutive runs — the workaround is just to push again once the queue drains.
 on:
   push:
     branches: [main]
