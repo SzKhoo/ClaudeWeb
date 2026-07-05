@@ -227,6 +227,90 @@ describe("Session", () => {
     expect(evt.error).toBeTruthy();
   });
 
+  it("serves a bundle_request by zipping the requested workspace files", async () => {
+    const h = makeHarness(root);
+    await h.session.start();
+    writeFileSync(join(root, "a.txt"), "hello a", "utf8");
+    writeFileSync(join(root, "b.txt"), "hello b", "utf8");
+
+    await h.session.handleCommand(
+      { type: "bundle_request", requestId: "bd-1", paths: ["a.txt", "b.txt"] },
+      CLIENT,
+    );
+
+    const data = h.out.find((o) => o.to === CLIENT && o.event.type === "file_data");
+    expect(data).toBeDefined();
+    const evt = data!.event as EvtFileData;
+    expect(evt.requestId).toBe("bd-1");
+    expect(evt.mediaType).toBe("application/zip");
+    expect(evt.name).toMatch(/^changes-\d{6}\.zip$/);
+    expect(evt.error).toBeUndefined();
+    expect(evt.data).toBeTruthy();
+
+    // Decode the zip and check both entries.
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(Buffer.from(evt.data!, "base64"));
+    expect(await zip.file("a.txt")!.async("string")).toBe("hello a");
+    expect(await zip.file("b.txt")!.async("string")).toBe("hello b");
+  });
+
+  it("rejects paths that escape the workspace root but still includes valid ones", async () => {
+    const h = makeHarness(root);
+    await h.session.start();
+    writeFileSync(join(root, "ok.txt"), "ok", "utf8");
+
+    await h.session.handleCommand(
+      { type: "bundle_request", requestId: "bd-2", paths: ["../../secret.txt", "ok.txt"] },
+      CLIENT,
+    );
+
+    const data = h.out.find((o) => o.to === CLIENT && o.event.type === "file_data");
+    const evt = data!.event as EvtFileData;
+    expect(evt.error).toBeUndefined();
+    expect(evt.data).toBeTruthy();
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(Buffer.from(evt.data!, "base64"));
+    expect(zip.file("ok.txt")).toBeTruthy();
+    expect(zip.file("../../secret.txt")).toBeNull();
+  });
+
+  it("returns an error bundle reply when every path is invalid or missing", async () => {
+    const h = makeHarness(root);
+    await h.session.start();
+
+    await h.session.handleCommand(
+      { type: "bundle_request", requestId: "bd-3", paths: ["../oops", "not-there.txt"] },
+      CLIENT,
+    );
+
+    const data = h.out.find((o) => o.to === CLIENT && o.event.type === "file_data");
+    const evt = data!.event as EvtFileData;
+    expect(evt.data).toBeUndefined();
+    expect(evt.error).toBeTruthy();
+  });
+
+  it("truncates the bundle when the accumulated raw bytes exceed MAX_FILE_BYTES", async () => {
+    const h = makeHarness(root);
+    await h.session.start();
+    // MAX_FILE_BYTES = 10 MiB. Two 6-MiB files → second one must be dropped and truncated=true.
+    const big = "x".repeat(6 * 1024 * 1024);
+    writeFileSync(join(root, "big1.txt"), big, "utf8");
+    writeFileSync(join(root, "big2.txt"), big, "utf8");
+
+    await h.session.handleCommand(
+      { type: "bundle_request", requestId: "bd-4", paths: ["big1.txt", "big2.txt"] },
+      CLIENT,
+    );
+
+    const data = h.out.find((o) => o.to === CLIENT && o.event.type === "file_data");
+    const evt = data!.event as EvtFileData;
+    expect(evt.truncated).toBe(true);
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(Buffer.from(evt.data!, "base64"));
+    expect(zip.file("big1.txt")).toBeTruthy();
+    expect(zip.file("big2.txt")).toBeNull();
+  });
+
   it("interrupts a turn that is awaiting approval", async () => {
     const h = makeHarness(root);
     await h.session.start();

@@ -16,6 +16,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, normalize, relative } from "node:path";
+import JSZip from "jszip";
 import type {
   ApplicationCommand,
   ApplicationEvent,
@@ -125,6 +126,9 @@ export class Session {
         return;
       case "file_request":
         await this.serveFileRequest(clientInstanceId, command.requestId, command.path);
+        return;
+      case "bundle_request":
+        await this.serveBundleRequest(clientInstanceId, command.requestId, command.paths);
         return;
       case "permission_response":
         await this.resolvePermission(command.requestId, command.decision, command.scope);
@@ -387,6 +391,65 @@ export class Session {
     }
   }
 
+  /**
+   * Serve a bundle_request: read each workspace-relative path, zip them, and reply with one file_data
+   * event carrying `application/zip`. Paths that escape the workspace root or fail to read are skipped;
+   * if every path fails, reply with an error. The accumulated raw bytes are capped at MAX_FILE_BYTES —
+   * if adding the next file would exceed it, stop and mark `truncated: true`.
+   */
+  private async serveBundleRequest(
+    clientInstanceId: string,
+    requestId: string,
+    paths: string[],
+  ): Promise<void> {
+    const name = bundleName(this.now());
+    const reply = (extra: Partial<EvtFileData>): void => {
+      this.deliver({
+        seq: 0,
+        to: clientInstanceId,
+        event: {
+          type: "file_data",
+          requestId,
+          path: name,
+          name,
+          mediaType: "application/zip",
+          ...extra,
+        },
+      });
+    };
+
+    const zip = new JSZip();
+    let accumulated = 0;
+    let truncated = false;
+    let added = 0;
+
+    for (const p of paths) {
+      const abs = this.safeResolve(p);
+      if (!abs) continue;
+      let buf: Buffer;
+      try {
+        buf = await readFile(abs);
+      } catch {
+        continue;
+      }
+      if (accumulated + buf.length > MAX_FILE_BYTES) {
+        truncated = true;
+        break;
+      }
+      zip.file(p, buf);
+      accumulated += buf.length;
+      added += 1;
+    }
+
+    if (added === 0) {
+      reply({ error: "No files could be bundled (all paths were invalid or unreadable)." });
+      return;
+    }
+
+    const bytes = await zip.generateAsync({ type: "nodebuffer" });
+    reply({ data: bytes.toString("base64"), ...(truncated ? { truncated: true } : {}) });
+  }
+
   /** Join a workspace-relative path under the root, returning undefined if it escapes or is absolute. */
   private safeResolve(p: string): string | undefined {
     if (!p || isAbsolute(p)) return undefined;
@@ -463,6 +526,14 @@ const MIME_BY_EXT: Record<string, string> = {
 
 function guessMediaType(p: string): string {
   return MIME_BY_EXT[extname(p).toLowerCase()] ?? "application/octet-stream";
+}
+
+function bundleName(nowMs: number): string {
+  const d = new Date(nowMs);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `changes-${hh}${mm}${ss}.zip`;
 }
 
 /** Build a DiffPreview from an engine permission request, if it carried a unified diff. */
