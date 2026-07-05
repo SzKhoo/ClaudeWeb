@@ -6,10 +6,13 @@ import { Markdown } from "./Markdown.js";
 export function Transcript({
   items,
   onDownload,
+  onDownloadBundle,
 }: {
   items: TranscriptItem[];
   /** Ask the daemon to send back a workspace file (path relative to the workspace root). */
   onDownload?: (path: string) => void;
+  /** Ask the daemon to zip up and send back all files changed during a turn. */
+  onDownloadBundle?: (paths: string[]) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -24,14 +27,22 @@ export function Transcript({
         </div>
       )}
       {items.map((item) => (
-        <Item key={item.id} item={item} onDownload={onDownload} />
+        <Item key={item.id} item={item} onDownload={onDownload} onDownloadBundle={onDownloadBundle} />
       ))}
       <div ref={endRef} />
     </div>
   );
 }
 
-function Item({ item, onDownload }: { item: TranscriptItem; onDownload?: (path: string) => void }) {
+function Item({
+  item,
+  onDownload,
+  onDownloadBundle,
+}: {
+  item: TranscriptItem;
+  onDownload?: (path: string) => void;
+  onDownloadBundle?: (paths: string[]) => void;
+}) {
   switch (item.kind) {
     case "user":
       return (
@@ -67,6 +78,18 @@ function Item({ item, onDownload }: { item: TranscriptItem; onDownload?: (path: 
       return (
         <div className="line error">
           <strong>{item.code}</strong> — {item.message}
+        </div>
+      );
+    case "bundle":
+      return (
+        <div className="line bundle">
+          <button
+            className="bundle-chip"
+            onClick={() => onDownloadBundle?.(item.paths)}
+            title={item.paths.join("\n")}
+          >
+            ⬇ Download {item.paths.length} file{item.paths.length === 1 ? "" : "s"} changed this turn (zip)
+          </button>
         </div>
       );
   }

@@ -996,3 +996,23 @@ button.link { background: none; border: none; color: var(--accent); cursor: poin
   text-align: left;
 }
 .md-table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02); }
+
+/* bundle download chip */
+.line.bundle {
+  display: flex;
+  justify-content: flex-start;
+  padding: 6px 12px;
+}
+.bundle-chip {
+  background: var(--accent-bg, var(--accent));
+  color: var(--accent-fg, #fff);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+.bundle-chip:hover {
+  filter: brightness(1.1);
+}

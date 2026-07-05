@@ -112,6 +112,10 @@ function Phase0App() {
     void connRef.current?.send({ type: "file_request", requestId: randomId(), path });
   }, []);
 
+  const requestBundle = useCallback((paths: string[]) => {
+    void connRef.current?.send({ type: "bundle_request", requestId: randomId(), paths });
+  }, []);
+
   const decide = useCallback(
     (requestId: string, decision: PermissionDecision, scope?: PermissionScope) => {
       const model = modelRef.current;
@@ -158,7 +162,7 @@ function Phase0App() {
         theme={theme}
         onToggleTheme={toggleTheme}
       />
-      <Transcript items={view.items} onDownload={requestFile} />
+      <Transcript items={view.items} onDownload={requestFile} onDownloadBundle={requestBundle} />
       {view.pending && <PermissionPrompt pending={view.pending} onDecide={decide} />}
       <Composer onSend={sendMessage} canSend={status === "ready"} busy={busy} onInterrupt={interrupt} />
     </div>
