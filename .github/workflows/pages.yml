@@ -46,6 +46,10 @@ jobs:
           VITE_BASE: /ClaudeWeb/
           # wss:// (secure) because the Pages site is HTTPS; a secure page cannot open an insecure ws://.
           VITE_RELAY_URL: ${{ vars.RELAY_URL || 'wss://claudeweb-qixf.onrender.com' }}
+          # The shared relay token. Not truly secret: baked into a public JS bundle, so anyone can
+          # read it. What blocks abuse is Ed25519 command signing (invariant #2) — an attacker who
+          # opens a socket still cannot execute anything. Override via repo variable RELAY_TOKEN.
+          VITE_RELAY_TOKEN: ${{ vars.RELAY_TOKEN || '241004ba47c43a79434e60e43e8821d9' }}
         run: npm run build:web
       - uses: actions/upload-pages-artifact@v3
         with:
