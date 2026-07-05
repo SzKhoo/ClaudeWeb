@@ -1,0 +1,57 @@
+name: Deploy web client to GitHub Pages
+
+# Builds packages/web and publishes it to GitHub Pages. The relay URL is baked in at build time.
+# Override the relay URL without editing this file by setting a repo variable named RELAY_URL
+# (Settings -> Secrets and variables -> Actions -> Variables). Falls back to the Render service URL.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/web/**"
+      - "packages/shared/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch: {}
+
+# Pages deployment needs these; contents:read is enough to check out the repo.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two Pages deploys at once; let an in-flight run finish rather than cancelling.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build web client
+        env:
+          # Project Pages live at https://<user>.github.io/ClaudeWeb/ — assets load from that subpath.
+          VITE_BASE: /ClaudeWeb/
+          # wss:// (secure) because the Pages site is HTTPS; a secure page cannot open an insecure ws://.
+          VITE_RELAY_URL: ${{ vars.RELAY_URL || 'wss://claudeweb.onrender.com' }}
+        run: npm run build:web
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

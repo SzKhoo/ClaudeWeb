@@ -9,6 +9,9 @@ import react from "@vitejs/plugin-react";
  */
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
+  // GitHub Pages serves a project repo under /<repo>/ (e.g. /ClaudeWeb/), so assets must be
+  // requested from that subpath. VITE_BASE is set by the Pages workflow; local/dev defaults to "/".
+  base: process.env["VITE_BASE"] ?? "/",
   plugins: [react()],
   resolve: {
     alias: {
