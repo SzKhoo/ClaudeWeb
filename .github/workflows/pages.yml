@@ -3,6 +3,9 @@ name: Deploy web client to GitHub Pages
 # Builds packages/web and publishes it to GitHub Pages. The relay URL is baked in at build time.
 # Override the relay URL without editing this file by setting a repo variable named RELAY_URL
 # (Settings -> Secrets and variables -> Actions -> Variables). Falls back to the Render service URL.
+#
+# Note: prior runs failed because Pages was not yet enabled with "GitHub Actions" as the source.
+# Once flipped, deployment succeeds automatically on subsequent pushes.
 on:
   push:
     branches: [main]
