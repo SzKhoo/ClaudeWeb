@@ -11,7 +11,9 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 # Source needed at runtime: the relay + shared packages, plus tsconfig for the @wcc/shared path alias.
-COPY tsconfig.json ./
+# tsconfig.json `extends` tsconfig.base.json, and the @wcc/shared `paths` mapping lives in the base —
+# both must be present or tsx cannot resolve the alias at runtime (ERR_MODULE_NOT_FOUND).
+COPY tsconfig.json tsconfig.base.json ./
 COPY packages/relay ./packages/relay
 COPY packages/shared ./packages/shared
 
