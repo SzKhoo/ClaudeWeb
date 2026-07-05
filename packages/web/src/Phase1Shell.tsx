@@ -34,7 +34,6 @@ import { Sidebar } from "./ui/Sidebar.js";
 import { Transcript } from "./ui/Transcript.js";
 import { PermissionPrompt } from "./ui/PermissionPrompt.js";
 import { Composer } from "./ui/Composer.js";
-import { DownloadBar } from "./ui/DownloadBar.js";
 import { useTheme } from "./theme.js";
 import {
   getPairing,
@@ -352,7 +351,6 @@ function LiveSession({
       </div>
       <Transcript items={view.items} onDownload={requestFile} />
       {view.pending && <PermissionPrompt pending={view.pending} onDecide={decide} />}
-      <DownloadBar onRequest={requestFile} canSend={status === "ready"} />
       <Composer onSend={sendMessage} canSend={status === "ready"} busy={busy} onInterrupt={interrupt} />
     </div>
   );
