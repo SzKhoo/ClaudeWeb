@@ -43,7 +43,7 @@ jobs:
           # Project Pages live at https://<user>.github.io/ClaudeWeb/ — assets load from that subpath.
           VITE_BASE: /ClaudeWeb/
           # wss:// (secure) because the Pages site is HTTPS; a secure page cannot open an insecure ws://.
-          VITE_RELAY_URL: ${{ vars.RELAY_URL || 'wss://claudeweb.onrender.com' }}
+          VITE_RELAY_URL: ${{ vars.RELAY_URL || 'wss://claudeweb-qixf.onrender.com' }}
         run: npm run build:web
       - uses: actions/upload-pages-artifact@v3
         with:
