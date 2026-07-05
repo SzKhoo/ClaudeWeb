@@ -27,21 +27,26 @@ interface Option<T extends string> {
   hint?: string;
 }
 
+/**
+ * Concrete choices only — no "Default" placeholder. When the daemon has not yet reported an active
+ * model/effort we display the FALLBACK entries below (Opus 4.7 / Medium) rather than a vague label.
+ */
 const MODELS: Option<string>[] = [
-  { id: "", label: "Default", hint: "Use the daemon's configured model" },
+  { id: "claude-opus-4-7", label: "Opus 4.7", hint: "Recommended" },
   { id: "claude-opus-4-8", label: "Opus 4.8", hint: "Highest quality" },
   { id: "claude-sonnet-5", label: "Sonnet 5", hint: "Balanced" },
   { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", hint: "Fastest" },
 ];
+const FALLBACK_MODEL = MODELS[0]!.id;
 
 const EFFORTS: Option<string>[] = [
-  { id: "", label: "Default" },
   { id: "low", label: "Low" },
   { id: "medium", label: "Medium" },
   { id: "high", label: "High" },
   { id: "xhigh", label: "Extra high" },
   { id: "max", label: "Max" },
 ];
+const FALLBACK_EFFORT = "medium";
 
 const MODES: Option<ExecutionMode>[] = [
   { id: "manual", label: "Manual", icon: "🔒", hint: "Every tool needs approval" },
@@ -84,14 +89,14 @@ export function Toolbar({
         <PopoverPicker
           title="Model"
           icon="🧠"
-          value={view.model ?? ""}
+          value={view.model ?? FALLBACK_MODEL}
           options={MODELS}
           onPick={(id) => onConfig({ model: id })}
         />
         <PopoverPicker
           title="Effort"
           icon="⚡"
-          value={view.effort ?? ""}
+          value={view.effort ?? FALLBACK_EFFORT}
           options={EFFORTS}
           onPick={(id) => onConfig({ effort: id as EffortLevel })}
         />
