@@ -12,7 +12,9 @@ import { loadOrCreateIdentity, type Identity } from "./identity.js";
 import { Connection, type ConnectionStatus } from "./protocol-client.js";
 import { SessionModel, type SessionView } from "./session-model.js";
 import { downloadBase64, randomId } from "./attachments.js";
-import { StatusBar } from "./ui/StatusBar.js";
+import { useTheme } from "./theme.js";
+import { Toolbar } from "./ui/Toolbar.js";
+import { Sidebar } from "./ui/Sidebar.js";
 import { Transcript } from "./ui/Transcript.js";
 import { PermissionPrompt } from "./ui/PermissionPrompt.js";
 import { Composer } from "./ui/Composer.js";
@@ -51,6 +53,8 @@ function Phase0App() {
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [view, setView] = useState<SessionView>(EMPTY_VIEW);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { theme, toggle: toggleTheme } = useTheme();
   const modelRef = useRef<SessionModel | null>(null);
   const connRef = useRef<Connection | null>(null);
 
@@ -140,7 +144,21 @@ function Phase0App() {
 
   return (
     <div className="app">
-      <StatusBar status={status} view={view} identity={identity} onMode={setMode} onConfig={setConfig} />
+      <Toolbar
+        status={status}
+        view={view}
+        onMode={setMode}
+        onConfig={setConfig}
+        onOpenSidebar={() => setSidebarOpen(true)}
+      />
+      <Sidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        identity={identity}
+        machine={view.machine}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
       <Transcript items={view.items} onDownload={requestFile} />
       {view.pending && <PermissionPrompt pending={view.pending} onDecide={decide} />}
       <DownloadBar onRequest={requestFile} canSend={status === "ready"} />

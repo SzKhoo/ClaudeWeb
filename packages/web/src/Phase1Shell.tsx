@@ -29,11 +29,13 @@ import { Connection, type ConnectionStatus } from "./protocol-client.js";
 import { SessionModel, type SessionView } from "./session-model.js";
 import { LoginScreen } from "./ui/LoginScreen.js";
 import { PairingScreen } from "./ui/PairingScreen.js";
-import { StatusBar } from "./ui/StatusBar.js";
+import { Toolbar } from "./ui/Toolbar.js";
+import { Sidebar } from "./ui/Sidebar.js";
 import { Transcript } from "./ui/Transcript.js";
 import { PermissionPrompt } from "./ui/PermissionPrompt.js";
 import { Composer } from "./ui/Composer.js";
 import { DownloadBar } from "./ui/DownloadBar.js";
+import { useTheme } from "./theme.js";
 import {
   getPairing,
   isAlreadyPaired,
@@ -242,6 +244,8 @@ function LiveSession({
 }) {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [view, setView] = useState<SessionView>(EMPTY_VIEW);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { theme, toggle: toggleTheme } = useTheme();
   const modelRef = useRef<SessionModel | null>(null);
   const connRef = useRef<Connection | null>(null);
 
@@ -323,7 +327,21 @@ function LiveSession({
 
   return (
     <div className="app">
-      <StatusBar status={status} view={view} identity={state.identity} onMode={setMode} onConfig={setConfig} />
+      <Toolbar
+        status={status}
+        view={view}
+        onMode={setMode}
+        onConfig={setConfig}
+        onOpenSidebar={() => setSidebarOpen(true)}
+      />
+      <Sidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        identity={state.identity}
+        machine={view.machine}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
       <div className="phase-bar">
         Signed in as <code>{state.session.email ?? state.session.userId}</code> · device{" "}
         <code>{settings.deviceId}</code>

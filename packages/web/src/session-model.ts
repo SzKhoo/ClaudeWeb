@@ -11,6 +11,7 @@ import type {
   DiffPreview,
   EffortLevel,
   ExecutionMode,
+  MachineState,
   SessionState,
 } from "@wcc/shared";
 
@@ -51,6 +52,7 @@ export interface SessionView {
   model?: string;
   effort?: EffortLevel;
   workspaceId?: string;
+  machine?: MachineState;
   ended?: { reason: string };
 }
 
@@ -62,6 +64,7 @@ export class SessionModel {
   private model: string | undefined;
   private effort: EffortLevel | undefined;
   private workspaceId: string | undefined;
+  private machine: MachineState | undefined;
   private ended: { reason: string } | undefined;
   private liveAssistantId: string | undefined;
   private counter = 0;
@@ -147,7 +150,8 @@ export class SessionModel {
         this.state = "ended";
         return;
       case "machine_state":
-        // Not surfaced in the Phase 0 transcript.
+        // Merge into the current snapshot so the sidebar can show hostname/platform/online-ness.
+        this.machine = { ...(this.machine ?? { online: false, lastSeen: 0 }), ...event.machine };
         return;
     }
   }
@@ -166,6 +170,7 @@ export class SessionModel {
       ...(this.model !== undefined ? { model: this.model } : {}),
       ...(this.effort !== undefined ? { effort: this.effort } : {}),
       ...(this.workspaceId !== undefined ? { workspaceId: this.workspaceId } : {}),
+      ...(this.machine ? { machine: this.machine } : {}),
       ...(this.ended ? { ended: this.ended } : {}),
     };
   }
