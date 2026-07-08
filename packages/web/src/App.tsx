@@ -20,7 +20,14 @@ import { PermissionPrompt } from "./ui/PermissionPrompt.js";
 import { Composer } from "./ui/Composer.js";
 import { Phase1Shell } from "./Phase1Shell.js";
 
-const EMPTY_VIEW: SessionView = { items: [], state: "idle" };
+const EMPTY_VIEW: SessionView = {
+  items: [],
+  state: "idle",
+  sessions: [],
+  activeSessionId: null,
+  displayedSessionId: null,
+  displayedItems: null,
+};
 
 /** A file_data reply: trigger a browser download on success, or surface the error in the transcript. */
 function handleFileData(
@@ -161,6 +168,15 @@ function Phase0App() {
         machine={view.machine}
         theme={theme}
         onToggleTheme={toggleTheme}
+        sessions={view.sessions}
+        activeSessionId={view.activeSessionId}
+        displayedSessionId={view.displayedSessionId}
+        onNewSession={() => connRef.current?.send({ type: "new_session" })}
+        onOpenSession={(id) => connRef.current?.send({ type: "get_session_journal", sessionId: id })}
+        onRenameSession={(id, title) =>
+          connRef.current?.send({ type: "rename_session", sessionId: id, title })
+        }
+        onDeleteSession={(id) => connRef.current?.send({ type: "delete_session", sessionId: id })}
       />
       <Transcript items={view.items} onDownload={requestFile} onDownloadBundle={requestBundle} />
       {view.pending && <PermissionPrompt pending={view.pending} onDecide={decide} />}

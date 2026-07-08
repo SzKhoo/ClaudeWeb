@@ -1,12 +1,13 @@
 import { useState } from "react";
-import type { MachineState } from "@wcc/shared";
+import type { MachineState, SessionMetaSummary } from "@wcc/shared";
 import type { Identity } from "../identity.js";
 import type { Theme } from "../theme.js";
+import { SessionList } from "./SessionList.js";
 
 /**
- * A slide-in settings drawer that always covers viewport-height so it works in portrait mode
- * (where the header's inline pairing panel used to fall below the fold). Opened by a ☰ button
- * in the toolbar; a scrim behind it closes on tap.
+ * A slide-in drawer with three vertical sections: New session + past sessions on top, the
+ * existing Settings block at the bottom. Opened by a ☰ button in the toolbar; a scrim behind
+ * it closes on tap.
  */
 export function Sidebar({
   open,
@@ -15,6 +16,13 @@ export function Sidebar({
   machine,
   theme,
   onToggleTheme,
+  sessions,
+  activeSessionId,
+  displayedSessionId,
+  onNewSession,
+  onOpenSession,
+  onRenameSession,
+  onDeleteSession,
 }: {
   open: boolean;
   onClose: () => void;
@@ -22,6 +30,13 @@ export function Sidebar({
   machine: MachineState | undefined;
   theme: Theme;
   onToggleTheme: () => void;
+  sessions: SessionMetaSummary[];
+  activeSessionId: string | null;
+  displayedSessionId: string | null;
+  onNewSession: () => void;
+  onOpenSession: (id: string) => void;
+  onRenameSession: (id: string, title: string) => void;
+  onDeleteSession: (id: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -41,11 +56,25 @@ export function Sidebar({
       {open && <div className="sidebar-scrim" onClick={onClose} aria-hidden />}
       <aside className={`sidebar ${open ? "open" : ""}`} aria-hidden={!open}>
         <div className="sidebar-head">
-          <div className="sidebar-title">Settings</div>
-          <button className="icon-btn" onClick={onClose} title="Close" aria-label="Close settings">
+          <div className="sidebar-title">WebClaudeCode</div>
+          <button className="icon-btn" onClick={onClose} title="Close" aria-label="Close">
             ×
           </button>
         </div>
+
+        <section className="sidebar-section">
+          <SessionList
+            sessions={sessions}
+            activeId={activeSessionId}
+            displayedId={displayedSessionId}
+            onNewSession={onNewSession}
+            onOpen={onOpenSession}
+            onRename={onRenameSession}
+            onDelete={onDeleteSession}
+          />
+        </section>
+
+        <hr className="sidebar-sep" />
 
         <section className="sidebar-section">
           <div className="sidebar-label">Your machine</div>

@@ -43,7 +43,14 @@ import {
   type PairingTransport,
 } from "./pairing-flow.js";
 
-const EMPTY_VIEW: SessionView = { items: [], state: "idle" };
+const EMPTY_VIEW: SessionView = {
+  items: [],
+  state: "idle",
+  sessions: [],
+  activeSessionId: null,
+  displayedSessionId: null,
+  displayedItems: null,
+};
 
 /** A file_data reply: trigger a browser download on success, or surface the error in the transcript. */
 function handleFileData(
@@ -323,6 +330,31 @@ function LiveSession({
     void connRef.current?.send({ type: "session_config", ...config });
   }, []);
 
+  const newSession = useCallback(() => {
+    void connRef.current?.send({ type: "new_session" });
+  }, []);
+
+  const openSession = useCallback((id: string) => {
+    const model = modelRef.current;
+    const conn = connRef.current;
+    if (!model || !conn) return;
+    // Displaying a session that isn't the active one: request its journal to render read-only.
+    // If the user later sends a message on this displayed session, Task 15 handles the resume.
+    model.setDisplayedSession(id);
+    setView(model.view());
+    if (id !== model.view().activeSessionId) {
+      void conn.send({ type: "get_session_journal", sessionId: id });
+    }
+  }, []);
+
+  const renameSession = useCallback((id: string, title: string) => {
+    void connRef.current?.send({ type: "rename_session", sessionId: id, title });
+  }, []);
+
+  const deleteSession = useCallback((id: string) => {
+    void connRef.current?.send({ type: "delete_session", sessionId: id });
+  }, []);
+
   const busy =
     view.state === "thinking" || view.state === "tool-running" || view.state === "awaiting-approval";
 
@@ -344,6 +376,13 @@ function LiveSession({
         machine={view.machine}
         theme={theme}
         onToggleTheme={toggleTheme}
+        sessions={view.sessions}
+        activeSessionId={view.activeSessionId}
+        displayedSessionId={view.displayedSessionId}
+        onNewSession={newSession}
+        onOpenSession={openSession}
+        onRenameSession={renameSession}
+        onDeleteSession={deleteSession}
       />
       <div className="phase-bar">
         Signed in as <code>{state.session.email ?? state.session.userId}</code> · device{" "}
