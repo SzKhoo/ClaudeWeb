@@ -1016,3 +1016,99 @@ button.link { background: none; border: none; color: var(--accent); cursor: poin
 .bundle-chip:hover {
   filter: brightness(1.1);
 }
+
+/* ─────────────────────────────  Session sidebar  ───────────────────────────── */
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1208;
+}
+.btn.block { width: 100%; }
+
+.sidebar-sep {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.session-rows {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.session-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+}
+.session-row:hover { background: var(--bg-card); }
+.session-row.displayed { background: var(--bg-card); box-shadow: 0 0 0 1px var(--border) inset; }
+.session-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.session-dot.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.session-row-body { flex: 1; min-width: 0; }
+.session-row-title {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.session-row-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.session-menu {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+  box-shadow: 0 8px 20px var(--shadow);
+}
+.session-menu button {
+  padding: 8px 14px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.session-menu button:hover:not(:disabled) { background: var(--bg-card); }
+.session-menu button:disabled { color: var(--muted); cursor: not-allowed; }
+
+/* Session-resumed divider in Transcript (Task 16). */
+.transcript-divider {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 0;
+  border-top: 1px dashed var(--border);
+  margin-top: 16px;
+}
