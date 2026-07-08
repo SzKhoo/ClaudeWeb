@@ -34,6 +34,7 @@ export class SessionManager {
   private readonly summarize: (id: string) => void;
   private activeId: string | null = null;
   private storage: SessionStorage | null = null;
+  private currentJournal: FileJournal | null = null;
   private mutex: Promise<void> = Promise.resolve();
 
   constructor(opts: SessionManagerOptions) {
@@ -72,7 +73,16 @@ export class SessionManager {
   }
 
   private async attach(id: string): Promise<void> {
+    // Close the outgoing journal so we don't leak write streams.
+    if (this.currentJournal) {
+      try {
+        await this.currentJournal.close();
+      } catch {
+        // journal already closed or write stream error — safe to ignore.
+      }
+    }
     const journal = await FileJournal.open(journalPath(this.workspaceRoot, id));
+    this.currentJournal = journal;
     const storage = new SessionStorage({ sessionId: id, journal });
     await storage.load();
     this.storage = storage;

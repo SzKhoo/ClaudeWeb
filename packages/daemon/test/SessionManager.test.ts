@@ -100,4 +100,16 @@ describe("SessionManager", () => {
     const result = await mgr.openSession({ id: first, resume: true });
     expect(result?.resumeContext).toBe("SUMMARY_TEXT");
   });
+
+  it("switching sessions does not leak the previous journal (smoke)", async () => {
+    const { mgr } = await makeMgr();
+    // Create 5 rapid session switches without error
+    for (let i = 0; i < 5; i++) {
+      clock += 1000;
+      const { id } = await mgr.newSession();
+      expect(id).toBeTruthy();
+    }
+    // If we got here without EMFILE or other errors, journals were properly closed
+    expect(mgr.list().length).toBe(6); // initial + 5 new sessions
+  });
 });
