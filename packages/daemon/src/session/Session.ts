@@ -86,6 +86,8 @@ export class Session {
   private model: string | undefined;
   private effort: EffortLevel | undefined;
   private currentTurnId: string | undefined;
+  /** One-shot system-prompt extension for the NEXT engine send() only (set after a session resume). */
+  private pendingResumeContext: string | null = null;
   private readonly pending = new Map<string, PendingPermission>();
   private readonly unsubscribers: Array<() => void> = [];
   private disposed = false;
@@ -172,6 +174,14 @@ export class Session {
     return this.state;
   }
 
+  /**
+   * Stash a one-shot system-prompt extension to be injected on the VERY NEXT engine send() (and only
+   * that one). Used after a session resume, once SessionManager hands back the prior transcript summary.
+   */
+  setPendingResumeContext(text: string): void {
+    this.pendingResumeContext = text;
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
@@ -192,8 +202,10 @@ export class Session {
     this.currentTurnId = turnId;
     this.storage.turnStart(turnId);
     this.setState("thinking");
+    const resumeContext = this.pendingResumeContext;
+    this.pendingResumeContext = null;
     try {
-      await this.engine.send(text, attachments);
+      await this.engine.send(text, attachments, resumeContext ?? undefined);
     } catch (err) {
       this.completeTurn("error", String(err));
     }

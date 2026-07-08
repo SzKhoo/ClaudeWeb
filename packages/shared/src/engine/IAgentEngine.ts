@@ -62,8 +62,11 @@ export interface IAgentEngine {
   /**
    * Send a user prompt to begin a turn. Resolves when the turn is accepted (not when it finishes).
    * `attachments` (images/PDF/text) ride along as agent content blocks.
+   * `resumeContext` is a one-shot system-prompt extension prepended for THIS turn only (used after a
+   * session resume). Engines must consume it here and not apply it on subsequent turns unless it's
+   * passed again.
    */
-  send(text: string, attachments?: Attachment[]): Promise<void>;
+  send(text: string, attachments?: Attachment[], resumeContext?: string): Promise<void>;
 
   /** Update the model / reasoning effort applied to subsequent turns. */
   configure(config: EngineConfig): Promise<void>;

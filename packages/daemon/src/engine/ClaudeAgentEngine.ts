@@ -112,6 +112,8 @@ export class ClaudeAgentEngine implements IAgentEngine {
   private effort: EffortLevel | undefined;
   /** Set by configure(); the next send() restarts the query so new model/effort take effect. */
   private needsRestart = false;
+  /** One-shot system-prompt extension from send()'s resumeContext, consumed by the next startQuery(). */
+  private pendingSystemPromptExtension: string | null = null;
   private readonly log: NonNullable<ClaudeAgentEngineOptions["logger"]>;
 
   constructor(private readonly opts: ClaudeAgentEngineOptions = {}) {
@@ -140,6 +142,12 @@ export class ClaudeAgentEngine implements IAgentEngine {
       ...(resume ? { resume } : {}),
       ...(this.opts.extraOptions ?? {}),
     };
+    if (this.pendingSystemPromptExtension) {
+      const banner = `[Prior session context — do not repeat back to user]\n${this.pendingSystemPromptExtension}`;
+      const existing = typeof options["systemPrompt"] === "string" ? (options["systemPrompt"] as string) : "";
+      options["systemPrompt"] = existing ? `${existing}\n\n${banner}` : banner;
+      this.pendingSystemPromptExtension = null;
+    }
     this.q = queryFn({ prompt: this.channel, options });
     this.interrupted = false;
     void this.consume(this.q);
@@ -151,8 +159,9 @@ export class ClaudeAgentEngine implements IAgentEngine {
     return mod.query;
   }
 
-  async send(text: string, attachments?: Attachment[]): Promise<void> {
+  async send(text: string, attachments?: Attachment[], resumeContext?: string): Promise<void> {
     if (!this.channel) throw new Error("ClaudeAgentEngine: connect() before send()");
+    if (resumeContext) this.pendingSystemPromptExtension = resumeContext;
     // A pending configure() (model/effort change) takes effect here: restart the query with the new
     // options, resuming the same conversation so context is preserved. Applying it at send-time (not
     // at configure-time) means a change never disrupts an in-flight turn — it lands on the next one.

@@ -37,6 +37,8 @@ export class MockEngine implements IAgentEngine {
   private turnActive = false;
   /** Last model/effort applied via configure() — exposed for assertions and status echo. */
   config: EngineConfig = {};
+  /** resumeContext received on the most recent send(), for test assertions. */
+  lastResumeContext: string | null = null;
 
   async configure(config: EngineConfig): Promise<void> {
     this.config = { ...this.config, ...config };
@@ -49,8 +51,9 @@ export class MockEngine implements IAgentEngine {
       : { checkpointId: randomUUID() };
   }
 
-  async send(text: string, attachments?: Attachment[]): Promise<void> {
+  async send(text: string, attachments?: Attachment[], resumeContext?: string): Promise<void> {
     if (this.turnActive) throw new Error("MockEngine: a turn is already active");
+    this.lastResumeContext = resumeContext ?? null;
     this.turnActive = true;
     this.interrupted = false;
     // Run the turn in the background; resolves immediately (turn accepted, not finished).
