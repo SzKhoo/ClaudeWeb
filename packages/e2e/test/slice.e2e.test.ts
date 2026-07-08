@@ -17,13 +17,10 @@ import { RelayServer } from "../../relay/src/RelayServer.js";
 import { Daemon } from "../../daemon/src/Daemon.js";
 import { DaemonClient } from "../../daemon/src/transport/DaemonClient.js";
 import { MockEngine } from "../../daemon/src/engine/MockEngine.js";
-import { InMemoryJournal, FileJournal } from "../../daemon/src/storage/journal.js";
 import { PairingStore } from "../../daemon/src/security/CommandVerifier.js";
-import type { JournalSink } from "../../daemon/src/storage/journal.js";
 import { Connection, type ConnectionStatus, type WebSocketCtor } from "../../web/src/protocol-client.js";
 import { SessionModel, type SessionView } from "../../web/src/session-model.js";
 import { makeTempWorkspace, cleanupWorkspace, fileExists, readWorkspaceFile } from "../../daemon/test/helpers.js";
-import { join } from "node:path";
 
 const TOKEN = "e2e-token";
 const DEVICE = "e2e-device";
@@ -93,7 +90,7 @@ interface Stack {
   keys: KeyPair;
 }
 
-async function startDaemon(opts: { url: string; keys: KeyPair; root: string; journal: JournalSink }): Promise<{ daemon: Daemon; client: DaemonClient }> {
+async function startDaemon(opts: { url: string; keys: KeyPair; root: string }): Promise<{ daemon: Daemon; client: DaemonClient }> {
   const pairing = new PairingStore();
   pairing.addPublicKey(opts.keys.publicKey);
   const daemon = new Daemon({
@@ -101,7 +98,7 @@ async function startDaemon(opts: { url: string; keys: KeyPair; root: string; jou
     sessionId: SESSION,
     workspaces: [{ workspaceId: "default", name: "e2e", root: opts.root }],
     engine: new MockEngine(),
-    journal: opts.journal,
+    workspaceRoot: opts.root,
     pairing,
     permissionTimeoutMs: 60_000,
     logger: () => {},
@@ -117,7 +114,7 @@ async function startStack(root: string): Promise<Stack> {
   const { port } = await relay.start();
   const url = `ws://localhost:${port}`;
   const keys = await generateKeyPair();
-  const { daemon, client } = await startDaemon({ url, keys, root, journal: new InMemoryJournal() });
+  const { daemon, client } = await startDaemon({ url, keys, root });
   return { relay, daemon, client, url, root, keys };
 }
 
@@ -210,13 +207,12 @@ describe("Phase 0 slice — full stack (web Connection ⇄ relay ⇄ daemon ⇄ 
   }, 20_000);
 
   it("dirty-exit: daemon killed mid-turn → restart → UI unlocks with an error turn", async () => {
-    // Use a file-backed journal so the open turn survives the restart.
-    const journalPath = join(root, ".wcc", "sessions", `${SESSION}.jsonl`);
-    // Stop the InMemoryJournal daemon from beforeEach; rebuild this stack on a FileJournal.
+    // SessionManager persists the active session id + its journal under `root/.wcc/sessions/<id>/`,
+    // so restarting a daemon on the SAME workspace root automatically resumes the same journal —
+    // no manual FileJournal wiring needed (unlike the old single-journal Daemon).
     await stack.client.stop();
     await stack.daemon.dispose();
-    const journal1 = await FileJournal.open(journalPath);
-    let d1 = await startDaemon({ url: stack.url, keys: stack.keys, root, journal: journal1 });
+    let d1 = await startDaemon({ url: stack.url, keys: stack.keys, root });
 
     const b = new Browser(stack.url, stack.keys, "browser-A");
     b.start();
@@ -226,13 +222,11 @@ describe("Phase 0 slice — full stack (web Connection ⇄ relay ⇄ daemon ⇄ 
     // "Kill" the daemon mid-turn (close its relay link + flush the journal to disk).
     await d1.client.stop();
     await d1.daemon.dispose();
-    await journal1.close();
     // Connection-level status (distinct from the session state) flips to machine-offline.
     await poll(() => (b.status === "daemon-offline" || b.status === "closed" ? true : undefined));
 
-    // Restart the daemon on the SAME journal → it detects the open turn and emits turn_complete{error}.
-    const journal2 = await FileJournal.open(journalPath);
-    const d2 = await startDaemon({ url: stack.url, keys: stack.keys, root, journal: journal2 });
+    // Restart the daemon on the SAME workspace root → it detects the open turn and emits turn_complete{error}.
+    const d2 = await startDaemon({ url: stack.url, keys: stack.keys, root });
 
     // Browser re-hydrates via resume → sees the error turn and unlocks (idle, pending cleared).
     await poll(() => (b.view().state === "idle" ? true : undefined));
@@ -245,7 +239,6 @@ describe("Phase 0 slice — full stack (web Connection ⇄ relay ⇄ daemon ⇄ 
     b.close();
     await d2.client.stop();
     await d2.daemon.dispose();
-    await journal2.close();
     // beforeEach's stack is already torn down; point afterEach at the live relay only.
     stack = { ...stack, daemon: d2.daemon, client: d2.client };
     void d1;

@@ -20,6 +20,9 @@ export interface SessionManagerOptions {
   now: () => number;
   /** Fire-and-forget request to summarize a closed session. */
   summarize: (sessionId: string) => void;
+  /** Forwarded to each session's SessionStorage. */
+  maxReplayEvents?: number;
+  maxToolStreamBytes?: number;
 }
 
 export interface ResumeResult {
@@ -32,6 +35,8 @@ export class SessionManager {
   private readonly index: SessionIndex;
   private readonly now: () => number;
   private readonly summarize: (id: string) => void;
+  private readonly maxReplayEvents: number | undefined;
+  private readonly maxToolStreamBytes: number | undefined;
   private activeId: string | null = null;
   private storage: SessionStorage | null = null;
   private currentJournal: FileJournal | null = null;
@@ -42,6 +47,8 @@ export class SessionManager {
     this.index = opts.index;
     this.now = opts.now;
     this.summarize = opts.summarize;
+    this.maxReplayEvents = opts.maxReplayEvents;
+    this.maxToolStreamBytes = opts.maxToolStreamBytes;
   }
 
   private withLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -83,7 +90,14 @@ export class SessionManager {
     }
     const journal = await FileJournal.open(journalPath(this.workspaceRoot, id));
     this.currentJournal = journal;
-    const storage = new SessionStorage({ sessionId: id, journal });
+    const storage = new SessionStorage({
+      sessionId: id,
+      journal,
+      onAppend: () => { void this.touch(); },
+      ...(this.maxReplayEvents !== undefined ? { maxReplayEvents: this.maxReplayEvents } : {}),
+      ...(this.maxToolStreamBytes !== undefined ? { maxToolStreamBytes: this.maxToolStreamBytes } : {}),
+      now: this.now,
+    });
     await storage.load();
     this.storage = storage;
     this.activeId = id;
@@ -179,20 +193,48 @@ export class SessionManager {
     });
   }
 
-  async renameSession(id: string, title: string): Promise<boolean> {
-    const dir = sessionDir(this.workspaceRoot, id);
-    const meta = await readMeta(dir);
-    if (!meta) return false;
-    await writeMetaAtomic(dir, { ...meta, title });
-    await this.index.refresh();
-    return true;
+  renameSession(id: string, title: string): Promise<boolean> {
+    // Behind the same mutex as touch()/newSession/etc. — renaming the ACTIVE session would otherwise
+    // race a concurrent touch() writing the same meta.json.
+    return this.withLock(async () => {
+      const dir = sessionDir(this.workspaceRoot, id);
+      const meta = await readMeta(dir);
+      if (!meta) return false;
+      await writeMetaAtomic(dir, { ...meta, title });
+      await this.index.refresh();
+      return true;
+    });
   }
 
-  async touch(): Promise<void> {
-    if (!this.activeId) return;
-    const dir = sessionDir(this.workspaceRoot, this.activeId);
-    const meta = await readMeta(dir);
-    if (!meta) return;
-    await writeMetaAtomic(dir, { ...meta, lastActivityAt: this.now() });
+  /**
+   * Bump lastActivityAt for the active session. Called (fire-and-forget) on every journal append, so
+   * it MUST be serialized behind the same mutex as newSession/openSession/deleteSession — otherwise a
+   * touch() racing a session switch/delete can write a stale meta.json or crash on a removed directory
+   * (observed as sporadic EPERM/ENOENT from concurrent writeMetaAtomic on Windows). Best-effort: a
+   * missing dir/meta (already deleted or mid-switch) is swallowed rather than thrown.
+   */
+  touch(): Promise<void> {
+    return this.withLock(async () => {
+      if (!this.activeId) return;
+      const dir = sessionDir(this.workspaceRoot, this.activeId);
+      try {
+        const meta = await readMeta(dir);
+        if (!meta) return;
+        await writeMetaAtomic(dir, { ...meta, lastActivityAt: this.now() });
+      } catch {
+        // Session directory vanished (deleted/switched) between the read and write — not fatal.
+      }
+    });
+  }
+
+  /** Flush + close the active session's journal write stream (daemon shutdown). */
+  async dispose(): Promise<void> {
+    if (!this.currentJournal) return;
+    try {
+      await this.currentJournal.close();
+    } catch {
+      // already closed — safe to ignore.
+    }
+    this.currentJournal = null;
   }
 }

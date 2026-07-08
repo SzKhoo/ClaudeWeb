@@ -11,7 +11,6 @@
  *   WCC_WORKSPACE_ROOT   allowlisted root        (default cwd)
  *   WCC_WORKSPACE_NAME   display name            (default default)
  *   WCC_PAIRED_PUBKEY    base64url Ed25519 browser public key (Phase-0 static pairing; optional in P1)
- *   WCC_JOURNAL_PATH     journal jsonl path      (default <root>/.wcc/sessions/<sessionId>.jsonl)
  *   WCC_ENGINE           mock | claude           (default mock)
  *   WCC_DEVICE_KEY_PATH  device identity file    (default <root>/.wcc/device.key.json)
  *   WCC_KEYS_PATH        enrolled-keys file      (default <root>/.wcc/keys.json)
@@ -25,7 +24,6 @@ import { DaemonClient } from "./transport/DaemonClient.js";
 import { MockEngine } from "./engine/MockEngine.js";
 import { ClaudeAgentEngine } from "./engine/ClaudeAgentEngine.js";
 import type { EffortLevel, IAgentEngine } from "@wcc/shared";
-import { FileJournal } from "./storage/journal.js";
 import { PairingStore } from "./security/CommandVerifier.js";
 import { EnrolledKeyStore } from "./security/EnrolledKeyStore.js";
 import { PairingCodeStore } from "./security/PairingCodeStore.js";
@@ -53,7 +51,6 @@ async function main(): Promise<void> {
   const sessionId = env["WCC_SESSION_ID"] ?? "dev-session";
   const root = env["WCC_WORKSPACE_ROOT"] ?? process.cwd();
   const name = env["WCC_WORKSPACE_NAME"] ?? "default";
-  const journalPath = env["WCC_JOURNAL_PATH"] ?? join(root, ".wcc", "sessions", `${sessionId}.jsonl`);
   const engineKind = env["WCC_ENGINE"] ?? "mock";
   const deviceKeyPath = env["WCC_DEVICE_KEY_PATH"] ?? join(root, ".wcc", "device.key.json");
   const enrolledKeysPath = env["WCC_KEYS_PATH"] ?? join(root, ".wcc", "keys.json");
@@ -104,7 +101,6 @@ async function main(): Promise<void> {
     logger("error", `WCC_ENGINE=${engineKind} unknown; use "mock" or "claude".`);
     process.exit(2);
   }
-  const journal = await FileJournal.open(journalPath);
   const workspaces: WorkspaceConfig[] = [{ workspaceId: "default", name, root }];
 
   const codes = new PairingCodeStore();
@@ -120,7 +116,7 @@ async function main(): Promise<void> {
     sessionId,
     workspaces,
     engine,
-    journal,
+    workspaceRoot: root,
     pairing,
     enrollment: enrollmentOpts,
     logger,
@@ -137,13 +133,12 @@ async function main(): Promise<void> {
 
   const client = new DaemonClient({ url: relayUrl, token, deviceId, daemon, logger });
   await client.start();
-  logger("info", "daemon up", { relayUrl, deviceId, sessionId, root, journalPath });
+  logger("info", "daemon up", { relayUrl, deviceId, sessionId, root });
 
   const shutdown = async () => {
     logger("info", "shutting down");
     await client.stop();
     await daemon.dispose();
-    await journal.close();
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown());
