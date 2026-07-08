@@ -45,7 +45,8 @@ export type TranscriptItem =
     }
   | { kind: "system"; id: string; level: "info" | "warn" | "error"; text: string }
   | { kind: "error"; id: string; code: string; message: string }
-  | { kind: "bundle"; id: string; paths: string[] };
+  | { kind: "bundle"; id: string; paths: string[] }
+  | { kind: "divider"; id: string; ts: number };
 
 export interface PendingPermission {
   requestId: string;
@@ -237,8 +238,7 @@ export class SessionModel {
         }
         return;
       case "session_resumed":
-        // In-journal marker; nothing to fold into live-session state. The Transcript renders it as
-        // a divider when it appears inside a displayedItems list.
+        this.items.push({ kind: "divider", id: this.nextId("d"), ts: event.ts });
         return;
     }
   }
