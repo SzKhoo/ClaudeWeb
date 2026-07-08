@@ -7,6 +7,8 @@ export interface IdleSweeperOptions {
   now: () => number;
   idleMs?: number;
   tickMs?: number;
+  /** Fired after a roll so the Daemon can rebind its Session and broadcast. */
+  onRoll?: () => void | Promise<void>;
 }
 
 export class IdleSweeper {
@@ -31,6 +33,7 @@ export class IdleSweeper {
     if (!meta) return;
     if (this.opts.now() - meta.lastActivityAt >= idle) {
       await this.opts.manager.newSession();
+      await this.opts.onRoll?.();
     }
   }
 }

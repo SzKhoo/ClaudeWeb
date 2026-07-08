@@ -150,7 +150,11 @@ export class Daemon {
       ...(opts.maxReplayEvents !== undefined ? { maxReplayEvents: opts.maxReplayEvents } : {}),
       ...(opts.maxToolStreamBytes !== undefined ? { maxToolStreamBytes: opts.maxToolStreamBytes } : {}),
     });
-    this.idleSweeper = new IdleSweeper({ manager: this.sessionManager, now: this.now });
+    this.idleSweeper = new IdleSweeper({
+      manager: this.sessionManager,
+      now: this.now,
+      onRoll: () => this.onActiveSessionRolled(),
+    });
 
     this.resumeCheckpoint = opts.resumeCheckpoint;
 
@@ -352,6 +356,14 @@ export class Daemon {
   private async handleNewSession(): Promise<void> {
     const { id } = await this.sessionManager.newSession();
     this.rebindSession();
+    this.emit({ seq: 0, to: "*", event: { type: "session_switched", sessionId: id, meta: this.metaFor(id) } });
+    this.broadcastSessionsList();
+  }
+
+  /** IdleSweeper callback: the session was auto-rolled, so rebind and broadcast like handleNewSession. */
+  private onActiveSessionRolled(): void {
+    this.rebindSession();
+    const id = this.sessionManager.getActiveId();
     this.emit({ seq: 0, to: "*", event: { type: "session_switched", sessionId: id, meta: this.metaFor(id) } });
     this.broadcastSessionsList();
   }
