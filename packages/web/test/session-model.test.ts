@@ -164,4 +164,129 @@ describe("SessionModel", () => {
     const bundles = items(m).filter((i) => i.kind === "bundle");
     expect(bundles).toHaveLength(1);
   });
+
+  describe("session sidebar state", () => {
+    it("starts with empty sessions list and null ids", () => {
+      const m = new SessionModel();
+      const v = m.view();
+      expect(v.sessions).toEqual([]);
+      expect(v.activeSessionId).toBeNull();
+      expect(v.displayedSessionId).toBeNull();
+      expect(v.displayedItems).toBeNull();
+    });
+
+    it("sessions_list updates the list", () => {
+      const m = new SessionModel();
+      m.apply({
+        type: "sessions_list",
+        sessions: [
+          { id: "a", title: "A", lastActivityAt: 1, status: "closed" },
+          { id: "b", title: "B", lastActivityAt: 2, status: "active" },
+        ],
+      });
+      expect(m.view().sessions.map((s) => s.id)).toEqual(["a", "b"]);
+    });
+
+    it("session_switched sets active id and defaults displayed id, patches status", () => {
+      const m = new SessionModel();
+      m.apply({
+        type: "sessions_list",
+        sessions: [
+          { id: "a", title: "A", lastActivityAt: 1, status: "active" },
+          { id: "b", title: "B", lastActivityAt: 2, status: "closed" },
+        ],
+      });
+      m.apply({
+        type: "session_switched",
+        sessionId: "b",
+        meta: { id: "b", title: "B", lastActivityAt: 2, status: "active" },
+      });
+      const v = m.view();
+      expect(v.activeSessionId).toBe("b");
+      expect(v.displayedSessionId).toBe("b");
+      expect(v.sessions.find((s) => s.id === "a")?.status).toBe("closed");
+      expect(v.sessions.find((s) => s.id === "b")?.status).toBe("active");
+    });
+
+    it("session_deleted removes from list and reverts displayed to active if it was showing the deleted one", () => {
+      const m = new SessionModel();
+      m.apply({
+        type: "sessions_list",
+        sessions: [
+          { id: "a", title: "A", lastActivityAt: 1, status: "active" },
+          { id: "b", title: "B", lastActivityAt: 2, status: "closed" },
+        ],
+      });
+      m.apply({
+        type: "session_switched",
+        sessionId: "a",
+        meta: { id: "a", title: "A", lastActivityAt: 1, status: "active" },
+      });
+      m.setDisplayedSession("b");
+      m.apply({ type: "session_deleted", sessionId: "b" });
+      const v = m.view();
+      expect(v.sessions.map((s) => s.id)).toEqual(["a"]);
+      expect(v.displayedSessionId).toBe("a");
+      expect(v.displayedItems).toBeNull();
+    });
+
+    it("session_renamed patches the title", () => {
+      const m = new SessionModel();
+      m.apply({
+        type: "sessions_list",
+        sessions: [{ id: "a", title: "Old", lastActivityAt: 1, status: "closed" }],
+      });
+      m.apply({ type: "session_renamed", sessionId: "a", title: "New" });
+      expect(m.view().sessions.find((s) => s.id === "a")?.title).toBe("New");
+    });
+
+    it("session_journal fills displayedItems by folding events, but only for the currently displayed id", () => {
+      const m = new SessionModel();
+      m.apply({
+        type: "session_switched",
+        sessionId: "current",
+        meta: { id: "current", title: null, lastActivityAt: 1, status: "active" },
+      });
+      m.setDisplayedSession("old");
+      // Reply for a DIFFERENT session — should be ignored.
+      m.apply({
+        type: "session_journal",
+        sessionId: "stale",
+        events: [{ type: "assistant_message", text: "hi" }],
+      });
+      expect(m.view().displayedItems).toBeNull();
+
+      // Reply for the currently-displayed session — should fold.
+      m.apply({
+        type: "session_journal",
+        sessionId: "old",
+        events: [
+          { type: "assistant_delta", text: "Hello" },
+          { type: "assistant_message", text: "Hello world" },
+        ],
+      });
+      const shown = m.view().displayedItems;
+      expect(shown).not.toBeNull();
+      expect(shown).toEqual([{ kind: "assistant", id: "a1", text: "Hello world", streaming: false }]);
+    });
+
+    it("setDisplayedSession(null) reverts to the active session", () => {
+      const m = new SessionModel();
+      m.apply({
+        type: "session_switched",
+        sessionId: "current",
+        meta: { id: "current", title: null, lastActivityAt: 1, status: "active" },
+      });
+      m.setDisplayedSession("old");
+      m.apply({
+        type: "session_journal",
+        sessionId: "old",
+        events: [{ type: "assistant_message", text: "X" }],
+      });
+      m.setDisplayedSession(null);
+      const v = m.view();
+      expect(v.displayedSessionId).toBe("current");
+      expect(v.displayedItems).toBeNull();
+    });
+  });
 });
