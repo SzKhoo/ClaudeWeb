@@ -149,6 +149,50 @@ export interface CmdSessionControl {
   workspaceId?: string;
 }
 
+export interface SessionMetaSummary {
+  id: string;
+  /** null until the summarizer has written a title. */
+  title: string | null;
+  /** epoch ms of the last user or assistant message. */
+  lastActivityAt: number;
+  status: "active" | "closed";
+}
+
+export interface CmdListSessions {
+  type: "list_sessions";
+}
+
+export interface CmdGetSessionJournal {
+  type: "get_session_journal";
+  sessionId: string;
+  /** Paged fetch. Undefined starts at the beginning. */
+  cursor?: number;
+  /** Default 100. */
+  limit?: number;
+}
+
+export interface CmdNewSession {
+  type: "new_session";
+}
+
+export interface CmdOpenSession {
+  type: "open_session";
+  sessionId: string;
+  /** true → daemon switches active session and primes summary for next turn. */
+  resume: boolean;
+}
+
+export interface CmdDeleteSession {
+  type: "delete_session";
+  sessionId: string;
+}
+
+export interface CmdRenameSession {
+  type: "rename_session";
+  sessionId: string;
+  title: string;
+}
+
 /**
  * TRANSPORT stream resume (CORRECTION #5: distinct from engine conversation-resume).
  * Asks the daemon to backfill events after `sinceSeq` and tool stdout after the given byte offsets.
@@ -178,7 +222,13 @@ export type ApplicationCommand =
   | CmdInterrupt
   | CmdSessionControl
   | CmdResume
-  | CmdAck;
+  | CmdAck
+  | CmdListSessions
+  | CmdGetSessionJournal
+  | CmdNewSession
+  | CmdOpenSession
+  | CmdDeleteSession
+  | CmdRenameSession;
 
 export type CommandType = ApplicationCommand["type"];
 
@@ -295,6 +345,48 @@ export interface EvtFileData {
   truncated?: boolean;
 }
 
+export interface EvtSessionsList {
+  type: "sessions_list";
+  sessions: SessionMetaSummary[];
+}
+
+export interface EvtSessionJournal {
+  type: "session_journal";
+  sessionId: string;
+  /** Journal records, oldest first. */
+  events: ApplicationEvent[];
+  /** Present when there are more events past this batch. */
+  nextCursor?: number;
+}
+
+export interface EvtSessionSwitched {
+  type: "session_switched";
+  sessionId: string;
+  meta: SessionMetaSummary;
+}
+
+export interface EvtSessionDeleted {
+  type: "session_deleted";
+  sessionId: string;
+}
+
+export interface EvtSessionRenamed {
+  type: "session_renamed";
+  sessionId: string;
+  title: string;
+}
+
+/**
+ * Written to a journal when a session is resumed (either via New→existing or Open→resume).
+ * Rendered as a "Resumed <timestamp>" divider in the transcript.
+ */
+export interface EvtSessionResumed {
+  type: "session_resumed";
+  ts: number;
+  /** The session that was active immediately before this resume (if any). */
+  previousSessionId?: string;
+}
+
 export type ApplicationEvent =
   | EvtAssistantDelta
   | EvtAssistantMessage
@@ -308,7 +400,13 @@ export type ApplicationEvent =
   | EvtError
   | EvtTurnComplete
   | EvtSessionEnded
-  | EvtFileData;
+  | EvtFileData
+  | EvtSessionsList
+  | EvtSessionJournal
+  | EvtSessionSwitched
+  | EvtSessionDeleted
+  | EvtSessionRenamed
+  | EvtSessionResumed;
 
 export type EventType = ApplicationEvent["type"];
 
@@ -328,6 +426,12 @@ const COMMAND_TYPES: ReadonlySet<string> = new Set<CommandType>([
   "session_control",
   "resume",
   "ack",
+  "list_sessions",
+  "get_session_journal",
+  "new_session",
+  "open_session",
+  "delete_session",
+  "rename_session",
 ]);
 
 /** True if `msg` is a client->daemon command (and therefore must be signature-verified). */

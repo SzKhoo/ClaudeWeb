@@ -28,6 +28,8 @@ export interface SessionStorageOptions {
   maxToolStreamBytes?: number;
   /** Clock (injectable for tests). */
   now?: () => number;
+  /** Fired after every successful append (e.g. so SessionManager can touch lastActivityAt). */
+  onAppend?: () => void;
 }
 
 interface ToolStream {
@@ -43,6 +45,7 @@ export class SessionStorage {
   private readonly maxReplayEvents: number;
   private readonly maxToolStreamBytes: number;
   private readonly now: () => number;
+  private readonly onAppend?: () => void;
 
   private seq = 0;
   private replay: StoredEvent[] = [];
@@ -54,6 +57,7 @@ export class SessionStorage {
     this.maxReplayEvents = opts.maxReplayEvents ?? 1000;
     this.maxToolStreamBytes = opts.maxToolStreamBytes ?? 5 * 1024 * 1024;
     this.now = opts.now ?? Date.now;
+    this.onAppend = opts.onAppend;
   }
 
   /**
@@ -84,6 +88,7 @@ export class SessionStorage {
     const stored: StoredEvent = { seq: ++this.seq, ts: this.now(), event: toStore };
     this.pushReplay(stored);
     this.journal.append({ kind: "event", seq: stored.seq, ts: stored.ts, event: stored.event });
+    this.onAppend?.();
     return stored;
   }
 

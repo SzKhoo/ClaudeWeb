@@ -92,6 +92,8 @@ function Item({
           </button>
         </div>
       );
+    case "divider":
+      return <div className="transcript-divider">Resumed {new Date(item.ts).toLocaleString()}</div>;
   }
 }
 

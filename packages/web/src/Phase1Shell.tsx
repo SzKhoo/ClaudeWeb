@@ -43,7 +43,14 @@ import {
   type PairingTransport,
 } from "./pairing-flow.js";
 
-const EMPTY_VIEW: SessionView = { items: [], state: "idle" };
+const EMPTY_VIEW: SessionView = {
+  items: [],
+  state: "idle",
+  sessions: [],
+  activeSessionId: null,
+  displayedSessionId: null,
+  displayedItems: null,
+};
 
 /** A file_data reply: trigger a browser download on success, or surface the error in the transcript. */
 function handleFileData(
@@ -247,6 +254,8 @@ function LiveSession({
   const { theme, toggle: toggleTheme } = useTheme();
   const modelRef = useRef<SessionModel | null>(null);
   const connRef = useRef<Connection | null>(null);
+  /** Queued user message waiting for the daemon to confirm session_switched. */
+  const pendingSendRef = useRef<{ text: string; attachments?: Attachment[] } | null>(null);
 
   useEffect(() => {
     const model = new SessionModel();
@@ -266,6 +275,21 @@ function LiveSession({
         }
         model.apply(e);
         setView(model.view());
+        // If we queued a user_message pending a session switch, flush it now.
+        if (e.type === "session_switched" && pendingSendRef.current) {
+          const p = pendingSendRef.current;
+          pendingSendRef.current = null;
+          model.addLocalUserMessage(
+            p.text,
+            p.attachments?.map((a) => ({ name: a.name, mediaType: a.mediaType })),
+          );
+          setView(model.view());
+          void conn.send({
+            type: "user_message",
+            text: p.text,
+            ...(p.attachments?.length ? { attachments: p.attachments } : {}),
+          });
+        }
       },
       onStatus: setStatus,
     });
@@ -278,6 +302,19 @@ function LiveSession({
     const model = modelRef.current;
     const conn = connRef.current;
     if (!model || !conn) return;
+    const v = model.view();
+    // If the user is viewing a past session (displayed != active), resume it first: dispatch
+    // open_session with resume:true, queue the user_message locally, and flush after
+    // session_switched arrives (handled in onEvent above).
+    if (
+      v.displayedSessionId &&
+      v.activeSessionId &&
+      v.displayedSessionId !== v.activeSessionId
+    ) {
+      pendingSendRef.current = { text, ...(attachments ? { attachments } : {}) };
+      void conn.send({ type: "open_session", sessionId: v.displayedSessionId, resume: true });
+      return;
+    }
     model.addLocalUserMessage(
       text,
       attachments?.map((a) => ({ name: a.name, mediaType: a.mediaType })),
@@ -323,6 +360,31 @@ function LiveSession({
     void connRef.current?.send({ type: "session_config", ...config });
   }, []);
 
+  const newSession = useCallback(() => {
+    void connRef.current?.send({ type: "new_session" });
+  }, []);
+
+  const openSession = useCallback((id: string) => {
+    const model = modelRef.current;
+    const conn = connRef.current;
+    if (!model || !conn) return;
+    // Displaying a session that isn't the active one: request its journal to render read-only.
+    // If the user later sends a message on this displayed session, Task 15 handles the resume.
+    model.setDisplayedSession(id);
+    setView(model.view());
+    if (id !== model.view().activeSessionId) {
+      void conn.send({ type: "get_session_journal", sessionId: id });
+    }
+  }, []);
+
+  const renameSession = useCallback((id: string, title: string) => {
+    void connRef.current?.send({ type: "rename_session", sessionId: id, title });
+  }, []);
+
+  const deleteSession = useCallback((id: string) => {
+    void connRef.current?.send({ type: "delete_session", sessionId: id });
+  }, []);
+
   const busy =
     view.state === "thinking" || view.state === "tool-running" || view.state === "awaiting-approval";
 
@@ -344,6 +406,13 @@ function LiveSession({
         machine={view.machine}
         theme={theme}
         onToggleTheme={toggleTheme}
+        sessions={view.sessions}
+        activeSessionId={view.activeSessionId}
+        displayedSessionId={view.displayedSessionId}
+        onNewSession={newSession}
+        onOpenSession={openSession}
+        onRenameSession={renameSession}
+        onDeleteSession={deleteSession}
       />
       <div className="phase-bar">
         Signed in as <code>{state.session.email ?? state.session.userId}</code> · device{" "}
@@ -353,7 +422,11 @@ function LiveSession({
           Sign out
         </button>
       </div>
-      <Transcript items={view.items} onDownload={requestFile} onDownloadBundle={requestBundle} />
+      <Transcript
+        items={view.displayedItems ?? view.items}
+        onDownload={requestFile}
+        onDownloadBundle={requestBundle}
+      />
       {view.pending && <PermissionPrompt pending={view.pending} onDecide={decide} />}
       <Composer onSend={sendMessage} canSend={status === "ready"} busy={busy} onInterrupt={interrupt} />
     </div>

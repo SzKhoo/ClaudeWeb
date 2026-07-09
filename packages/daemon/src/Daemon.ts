@@ -39,10 +39,21 @@ import {
 } from "./security/EnrollmentManager.js";
 import { isEnrollRequest } from "@wcc/shared";
 import { Session, type OutgoingEvent } from "./session/Session.js";
-import { SessionStorage } from "./storage/SessionStorage.js";
-import type { JournalSink } from "./storage/journal.js";
+import { SessionManager } from "./session/SessionManager.js";
+import { Summarizer } from "./session/Summarizer.js";
+import { IdleSweeper } from "./session/IdleSweeper.js";
+import { StubSummarizerEngine } from "./session/StubSummarizerEngine.js";
+import { SessionIndex } from "./storage/SessionIndex.js";
 import { WorkspaceManager, type WorkspaceConfig } from "./workspace/workspace.js";
-import type { IAgentEngine } from "@wcc/shared";
+import type {
+  ApplicationCommand,
+  CmdDeleteSession,
+  CmdGetSessionJournal,
+  CmdOpenSession,
+  CmdRenameSession,
+  IAgentEngine,
+  SessionMetaSummary,
+} from "@wcc/shared";
 
 export type DaemonLogger = (
   level: "debug" | "info" | "warn" | "error",
@@ -63,10 +74,12 @@ const DAEMON_CAPABILITIES: readonly Capability[] = [
 
 export interface DaemonOptions {
   deviceId: string;
+  /** Wire-protocol routing id (TransportEnvelope.sessionId) — NOT the SessionManager's active session. */
   sessionId: string;
   workspaces: WorkspaceConfig[];
   engine: IAgentEngine;
-  journal: JournalSink;
+  /** Root under which `.wcc/sessions/<id>/` folders live; SessionManager owns per-session storage. */
+  workspaceRoot: string;
   pairing: PairingKeyStore;
   /** Optional: enable Phase-1 dynamic browser-key enrollment via pre-session pairing frames. */
   enrollment?: EnrollmentManagerOptions;
@@ -85,10 +98,18 @@ export class Daemon {
   readonly sessionId: string;
   private readonly workspaces: WorkspaceManager;
   private readonly verifier: CommandVerifier;
-  private readonly session: Session;
+  private session!: Session;
+  private readonly sessionIndex: SessionIndex;
+  private readonly sessionManager: SessionManager;
+  private readonly summarizer: Summarizer;
+  private readonly idleSweeper: IdleSweeper;
   private readonly enrollment?: EnrollmentManager;
   private readonly now: () => number;
   private readonly log: DaemonLogger;
+
+  /** Retained for rebindSession() — the engine instance and permission timeout never change on switch. */
+  private readonly engine: IAgentEngine;
+  private readonly permissionTimeoutMs: number | undefined;
 
   /** Outbound transport, installed by the transport layer (DaemonClient) once the WS is up. */
   private transmit: ((raw: string) => void) | undefined;
@@ -107,22 +128,32 @@ export class Daemon {
       ...(opts.now ? { now: opts.now } : {}),
     });
 
-    const storage = new SessionStorage({
-      sessionId: opts.sessionId,
-      journal: opts.journal,
+    this.engine = opts.engine;
+    this.permissionTimeoutMs = opts.permissionTimeoutMs;
+
+    this.sessionIndex = new SessionIndex({
+      workspaceRoot: opts.workspaceRoot,
+      onChange: () => this.broadcastSessionsList(),
+    });
+    this.summarizer = new Summarizer({
+      workspaceRoot: opts.workspaceRoot,
+      engine: new StubSummarizerEngine(),
+      now: this.now,
+      log: (l, m, meta) => this.log(l, m, meta),
+    });
+    this.sessionManager = new SessionManager({
+      workspaceRoot: opts.workspaceRoot,
+      index: this.sessionIndex,
+      now: this.now,
+      summarize: (id) =>
+        this.summarizer.run(id).catch((e) => this.log("warn", "summarizer error", { id, err: String(e) })),
       ...(opts.maxReplayEvents !== undefined ? { maxReplayEvents: opts.maxReplayEvents } : {}),
       ...(opts.maxToolStreamBytes !== undefined ? { maxToolStreamBytes: opts.maxToolStreamBytes } : {}),
-      ...(opts.now ? { now: opts.now } : {}),
     });
-
-    this.session = new Session({
-      sessionId: opts.sessionId,
-      workspace: this.workspaces.active(),
-      engine: opts.engine,
-      storage,
-      deliver: (out) => this.emit(out),
-      ...(opts.permissionTimeoutMs !== undefined ? { permissionTimeoutMs: opts.permissionTimeoutMs } : {}),
-      ...(opts.now ? { now: opts.now } : {}),
+    this.idleSweeper = new IdleSweeper({
+      manager: this.sessionManager,
+      now: this.now,
+      onRoll: () => this.onActiveSessionRolled(),
     });
 
     this.resumeCheckpoint = opts.resumeCheckpoint;
@@ -153,8 +184,21 @@ export class Daemon {
     this.transmit = transmit;
   }
 
+  /**
+   * Bring up the session-management stack: run legacy-session migration, load/mint the active
+   * session, start the fs-watch index, start the idle sweeper, then bind `this.session` to the
+   * active session's storage. Must run before `start()` calls `session.start`.
+   */
+  async initialize(): Promise<void> {
+    await this.sessionManager.initialize();
+    await this.sessionIndex.start();
+    this.idleSweeper.start();
+    this.rebindSession();
+  }
+
   /** Connect the engine + rebuild session state (recovers a dirty exit → UI unlock). */
   async start(): Promise<void> {
+    await this.initialize();
     await this.session.start(this.resumeCheckpoint);
   }
 
@@ -194,7 +238,10 @@ export class Daemon {
   }
 
   async dispose(): Promise<void> {
+    this.idleSweeper.stop();
+    this.sessionIndex.stop();
     await this.session.dispose();
+    await this.sessionManager.dispose();
   }
 
   /** Verification stats — for ops and the rejection tests. */
@@ -246,7 +293,162 @@ export class Daemon {
       this.reject(env, "wrong_session");
       return;
     }
-    await this.session.handleCommand(outcome.command, outcome.clientInstanceId);
+    await this.dispatch(outcome.command, outcome.clientInstanceId);
+  }
+
+  /**
+   * Session-sidebar commands are intercepted HERE, before Session.handleCommand, because they change
+   * WHICH Session is active — Session itself never reassigns `this.session` on the Daemon.
+   */
+  private async dispatch(command: ApplicationCommand, clientInstanceId: string): Promise<void> {
+    switch (command.type) {
+      case "list_sessions":
+        this.replyList(clientInstanceId);
+        return;
+      case "get_session_journal":
+        await this.replyJournal(clientInstanceId, command);
+        return;
+      case "new_session":
+        await this.handleNewSession();
+        return;
+      case "open_session":
+        await this.handleOpenSession(clientInstanceId, command);
+        return;
+      case "delete_session":
+        await this.handleDeleteSession(clientInstanceId, command);
+        return;
+      case "rename_session":
+        await this.handleRenameSession(command);
+        return;
+      default:
+        await this.session.handleCommand(command, clientInstanceId);
+    }
+  }
+
+  // ───────────────────────────── session-sidebar commands ─────────────────────────────
+
+  private replyList(clientInstanceId: string): void {
+    this.emit({
+      seq: 0,
+      to: clientInstanceId,
+      event: { type: "sessions_list", sessions: this.sessionManager.list() },
+    });
+  }
+
+  private async replyJournal(clientInstanceId: string, cmd: CmdGetSessionJournal): Promise<void> {
+    const { events, nextCursor } = await this.sessionManager.readJournal(
+      cmd.sessionId,
+      cmd.cursor,
+      cmd.limit,
+    );
+    this.emit({
+      seq: 0,
+      to: clientInstanceId,
+      event: {
+        type: "session_journal",
+        sessionId: cmd.sessionId,
+        events,
+        ...(nextCursor !== undefined ? { nextCursor } : {}),
+      },
+    });
+  }
+
+  private async handleNewSession(): Promise<void> {
+    const { id } = await this.sessionManager.newSession();
+    this.rebindSession();
+    this.emit({ seq: 0, to: "*", event: { type: "session_switched", sessionId: id, meta: this.metaFor(id) } });
+    this.broadcastSessionsList();
+  }
+
+  /** IdleSweeper callback: the session was auto-rolled, so rebind and broadcast like handleNewSession. */
+  private onActiveSessionRolled(): void {
+    this.rebindSession();
+    const id = this.sessionManager.getActiveId();
+    this.emit({ seq: 0, to: "*", event: { type: "session_switched", sessionId: id, meta: this.metaFor(id) } });
+    this.broadcastSessionsList();
+  }
+
+  private async handleOpenSession(clientInstanceId: string, cmd: CmdOpenSession): Promise<void> {
+    if (!cmd.resume) {
+      // Read-only viewing: just serve the journal, no active-session change.
+      await this.replyJournal(clientInstanceId, { type: "get_session_journal", sessionId: cmd.sessionId });
+      return;
+    }
+    const result = await this.sessionManager.openSession({ id: cmd.sessionId, resume: true });
+    if (!result) {
+      this.emit({
+        seq: 0,
+        to: clientInstanceId,
+        event: { type: "error", code: "session_not_found", message: cmd.sessionId },
+      });
+      return;
+    }
+    this.rebindSession();
+    // TODO(session-switch): setPendingResumeContext primes a one-shot system-prompt extension consumed
+    // on the NEXT engine send(). The engine instance is reused across the switch (see rebindSession),
+    // so its underlying conversation state (e.g. ClaudeAgentEngine's live SDK session) still reflects
+    // the PREVIOUS session until then. A follow-up may need to reconnect/re-`connect()` the engine on
+    // session switch so its conversation state matches the newly active session from turn one.
+    if (result.resumeContext) this.session.setPendingResumeContext(result.resumeContext);
+    this.emit({
+      seq: 0,
+      to: "*",
+      event: { type: "session_switched", sessionId: cmd.sessionId, meta: this.metaFor(cmd.sessionId) },
+    });
+    this.broadcastSessionsList();
+  }
+
+  private async handleDeleteSession(clientInstanceId: string, cmd: CmdDeleteSession): Promise<void> {
+    const ok = await this.sessionManager.deleteSession(cmd.sessionId);
+    if (!ok) {
+      this.emit({
+        seq: 0,
+        to: clientInstanceId,
+        event: { type: "error", code: "session_delete_refused", message: cmd.sessionId },
+      });
+      return;
+    }
+    this.emit({ seq: 0, to: "*", event: { type: "session_deleted", sessionId: cmd.sessionId } });
+    this.broadcastSessionsList();
+  }
+
+  private async handleRenameSession(cmd: CmdRenameSession): Promise<void> {
+    const ok = await this.sessionManager.renameSession(cmd.sessionId, cmd.title);
+    if (!ok) return;
+    this.emit({
+      seq: 0,
+      to: "*",
+      event: { type: "session_renamed", sessionId: cmd.sessionId, title: cmd.title },
+    });
+    this.broadcastSessionsList();
+  }
+
+  /** Replace `this.session` with a fresh Session bound to the (now-active) SessionManager storage. */
+  private rebindSession(): void {
+    this.session = new Session({
+      sessionId: this.sessionManager.getActiveId(),
+      workspace: this.workspaces.active(),
+      engine: this.engine,
+      storage: this.sessionManager.getStorage(),
+      deliver: (out) => this.emit(out),
+      ...(this.permissionTimeoutMs !== undefined ? { permissionTimeoutMs: this.permissionTimeoutMs } : {}),
+      now: this.now,
+    });
+  }
+
+  private metaFor(id: string): SessionMetaSummary {
+    return (
+      this.sessionManager.list().find((s) => s.id === id) ?? {
+        id,
+        title: null,
+        lastActivityAt: this.now(),
+        status: "active",
+      }
+    );
+  }
+
+  private broadcastSessionsList(): void {
+    this.emit({ seq: 0, to: "*", event: { type: "sessions_list", sessions: this.sessionManager.list() } });
   }
 
   private reject(env: TransportEnvelope, reason: VerifyReason | "wrong_session"): void {

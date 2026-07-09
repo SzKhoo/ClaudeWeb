@@ -12,6 +12,7 @@ import type {
   EffortLevel,
   ExecutionMode,
   MachineState,
+  SessionMetaSummary,
   SessionState,
 } from "@wcc/shared";
 
@@ -44,7 +45,8 @@ export type TranscriptItem =
     }
   | { kind: "system"; id: string; level: "info" | "warn" | "error"; text: string }
   | { kind: "error"; id: string; code: string; message: string }
-  | { kind: "bundle"; id: string; paths: string[] };
+  | { kind: "bundle"; id: string; paths: string[] }
+  | { kind: "divider"; id: string; ts: number };
 
 export interface PendingPermission {
   requestId: string;
@@ -64,6 +66,17 @@ export interface SessionView {
   workspaceId?: string;
   machine?: MachineState;
   ended?: { reason: string };
+  /** All sessions on the daemon, sorted by lastActivityAt desc. */
+  sessions: SessionMetaSummary[];
+  /** The session the daemon is currently running turns on. */
+  activeSessionId: string | null;
+  /** The session whose transcript is on screen (may be a past session in read-only view). */
+  displayedSessionId: string | null;
+  /**
+   * Read-only transcript items reduced from a past session's journal. Non-null when the user
+   * clicked a past session in the sidebar and its journal has been fetched.
+   */
+  displayedItems: TranscriptItem[] | null;
 }
 
 export class SessionModel {
@@ -80,6 +93,10 @@ export class SessionModel {
   private counter = 0;
   private readonly pendingEdits = new Map<string, string>(); // toolId -> path (Write/Edit family only)
   private readonly changedThisTurn = new Set<string>();      // dedupes; iteration order = insertion
+  private sessions: SessionMetaSummary[] = [];
+  private activeSessionId: string | null = null;
+  private displayedSessionId: string | null = null;
+  private displayedItems: TranscriptItem[] | null = null;
 
   /** Record a locally-sent user message so it shows immediately (it isn't echoed back as an event). */
   addLocalUserMessage(text: string, attachments?: AttachmentMeta[]): void {
@@ -185,12 +202,65 @@ export class SessionModel {
         // Merge into the current snapshot so the sidebar can show hostname/platform/online-ness.
         this.machine = { ...(this.machine ?? { online: false, lastSeen: 0 }), ...event.machine };
         return;
+      case "sessions_list":
+        this.sessions = event.sessions;
+        return;
+      case "session_switched":
+        this.activeSessionId = event.sessionId;
+        // If nothing was displayed yet, or the user was viewing the just-switched-away session,
+        // default to showing the newly-active session live.
+        if (this.displayedSessionId === null || this.displayedSessionId === this.activeSessionId) {
+          this.displayedSessionId = event.sessionId;
+          this.displayedItems = null;
+        }
+        // Patch the sessions list entry so the sidebar reflects "active" immediately.
+        this.sessions = this.sessions.map((s) =>
+          s.id === event.sessionId ? { ...s, status: "active" } : s.status === "active" ? { ...s, status: "closed" } : s,
+        );
+        return;
+      case "session_deleted":
+        this.sessions = this.sessions.filter((s) => s.id !== event.sessionId);
+        if (this.displayedSessionId === event.sessionId) {
+          this.displayedSessionId = this.activeSessionId;
+          this.displayedItems = null;
+        }
+        return;
+      case "session_renamed":
+        this.sessions = this.sessions.map((s) =>
+          s.id === event.sessionId ? { ...s, title: event.title } : s,
+        );
+        return;
+      case "session_journal":
+        // Only apply if it matches what the UI is currently displaying (a stale reply for a different
+        // session — e.g. the user tapped twice fast — is dropped).
+        if (this.displayedSessionId === event.sessionId) {
+          this.displayedItems = reduceEventsToItems(event.events);
+        }
+        return;
+      case "session_resumed":
+        this.items.push({ kind: "divider", id: this.nextId("d"), ts: event.ts });
+        return;
     }
   }
 
   /** Clear the pending prompt optimistically (the UI calls this right after the user answers). */
   clearPending(): void {
     this.pending = undefined;
+  }
+
+  /**
+   * The UI calls this when the user taps a session row. Passing null (or the active id) reverts
+   * to showing the live session. Passing a non-active id clears any previously-fetched displayed
+   * journal so the caller can dispatch `get_session_journal` and wait for it.
+   */
+  setDisplayedSession(id: string | null): void {
+    if (id === null || id === this.activeSessionId) {
+      this.displayedSessionId = this.activeSessionId;
+      this.displayedItems = null;
+      return;
+    }
+    this.displayedSessionId = id;
+    this.displayedItems = null;
   }
 
   view(): SessionView {
@@ -204,6 +274,10 @@ export class SessionModel {
       ...(this.workspaceId !== undefined ? { workspaceId: this.workspaceId } : {}),
       ...(this.machine ? { machine: this.machine } : {}),
       ...(this.ended ? { ended: this.ended } : {}),
+      sessions: [...this.sessions],
+      activeSessionId: this.activeSessionId,
+      displayedSessionId: this.displayedSessionId,
+      displayedItems: this.displayedItems ? [...this.displayedItems] : null,
     };
   }
 
@@ -253,4 +327,15 @@ export class SessionModel {
   private nextId(prefix: string): string {
     return `${prefix}${++this.counter}`;
   }
+}
+
+/**
+ * Fold a past session's journal events into transcript items — used to render read-only views of
+ * past sessions in the sidebar. Runs a fresh SessionModel that only sees `apply()`, so it reuses the
+ * exact same transcript-building rules as the live view.
+ */
+function reduceEventsToItems(events: ApplicationEvent[]): TranscriptItem[] {
+  const m = new SessionModel();
+  for (const ev of events) m.apply(ev);
+  return m.view().items;
 }

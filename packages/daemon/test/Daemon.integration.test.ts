@@ -12,7 +12,6 @@ import { RelayServer } from "../../relay/src/RelayServer.js";
 import { Daemon } from "../src/Daemon.js";
 import { DaemonClient } from "../src/transport/DaemonClient.js";
 import { MockEngine } from "../src/engine/MockEngine.js";
-import { InMemoryJournal } from "../src/storage/journal.js";
 import { PairingStore } from "../src/security/CommandVerifier.js";
 import {
   cleanupWorkspace,
@@ -176,7 +175,7 @@ describe("Daemon ↔ relay ↔ browser integration", () => {
       sessionId: SESSION,
       workspaces: [{ workspaceId: "default", name: "test", root }],
       engine: new MockEngine(),
-      journal: new InMemoryJournal(),
+      workspaceRoot: root,
       pairing,
       logger: () => {},
     });
