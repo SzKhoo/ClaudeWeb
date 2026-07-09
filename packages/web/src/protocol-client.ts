@@ -95,6 +95,10 @@ export class Connection {
       logger: options.logger ?? (() => {}),
     };
     this.backoff = this.opts.minBackoffMs;
+    // Restore the outgoing seq high-water mark from localStorage so a page reload doesn't
+    // collide with the daemon's ReplayGuard (which persists in-memory across the browser
+    // reload but not across daemon restarts). See docs/notes on invariant #4.
+    this.seq = readPersistedSeq(options.sessionId, options.clientInstanceId);
   }
 
   /** Highest session seq received so far (the resume cursor). */
@@ -127,12 +131,14 @@ export class Connection {
   async send(command: ApplicationCommand): Promise<boolean> {
     const ws = this.ws;
     if (!ws || ws.readyState !== WS_OPEN) return false;
+    const nextSeq = ++this.seq;
+    writePersistedSeq(this.opts.sessionId, this.opts.clientInstanceId, nextSeq);
     const env = newEnvelope({
       protocolVersion: PROTOCOL_VERSION,
       deviceId: this.opts.deviceId,
       sessionId: this.opts.sessionId,
       clientInstanceId: this.opts.clientInstanceId,
-      seq: ++this.seq,
+      seq: nextSeq,
       payload: command,
     });
     const sig = await signEnvelope(env, this.opts.secretKey);
@@ -263,5 +269,34 @@ export class Connection {
       this.opts.WebSocketImpl ?? (globalThis as { WebSocket?: WebSocketCtor }).WebSocket;
     if (!impl) throw new Error("No WebSocket implementation available");
     return impl;
+  }
+}
+
+/**
+ * Persist the outgoing envelope seq per (sessionId, clientInstanceId) in localStorage so a page
+ * reload never regresses the counter and hits the daemon's ReplayGuard as a duplicate. In node
+ * (tests) localStorage is absent, and seq lives only in memory for the Connection's lifetime.
+ */
+function seqStorageKey(sessionId: string, clientInstanceId: string): string {
+  return `wcc.seq.v1.${sessionId}.${clientInstanceId}`;
+}
+
+function readPersistedSeq(sessionId: string, clientInstanceId: string): number {
+  if (typeof localStorage === "undefined") return 0;
+  try {
+    const raw = localStorage.getItem(seqStorageKey(sessionId, clientInstanceId));
+    const parsed = raw ? Number.parseInt(raw, 10) : 0;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writePersistedSeq(sessionId: string, clientInstanceId: string, seq: number): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(seqStorageKey(sessionId, clientInstanceId), String(seq));
+  } catch {
+    /* quota exceeded or storage disabled — best-effort only */
   }
 }
