@@ -22,6 +22,8 @@ import {
 } from "@wcc/shared";
 
 const WS_OPEN = 1;
+/** How far to jump the outgoing seq forward on a "replayed" reject to auto-recover. */
+const SEQ_REJECT_BUMP = 1000;
 
 /** Minimal structural view of a WebSocket — satisfied by both the browser global and `ws`. */
 export interface WebSocketLike {
@@ -223,6 +225,17 @@ export class Connection {
       const next = event.offset + event.chunk.length; // next byte offset this client has consumed
       const prev = this.toolOffsets.get(event.toolId) ?? 0;
       this.toolOffsets.set(event.toolId, Math.max(prev, next));
+    }
+    // Auto-recover from a ReplayGuard mismatch by jumping the outgoing seq forward. Happens when
+    // the browser's persisted seq is behind the daemon's ReplayGuard state (e.g. first reload
+    // after this recovery logic shipped, or after the browser storage was cleared but the daemon
+    // kept its in-memory replay window). Bumping past any plausible remembered high-water mark
+    // is safe: daemon accepts anything strictly greater than lastSeen, and the fresh envelope is
+    // still signature-verified + timestamp-fresh.
+    if (event.type === "error" && event.code === "rejected_command" && /replayed/i.test(event.message)) {
+      this.seq += SEQ_REJECT_BUMP;
+      writePersistedSeq(this.opts.sessionId, this.opts.clientInstanceId, this.seq);
+      this.opts.logger("warn", "replay-rejected; bumped outgoing seq", { newSeq: this.seq });
     }
     this.opts.onEvent?.(event);
   }
